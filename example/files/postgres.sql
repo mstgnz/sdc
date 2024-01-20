@@ -19,6 +19,10 @@ CREATE TABLE "public"."blogs" (
 COMMENT ON COLUMN "public"."blogs"."slug" IS 'Title Slug';
 
 -- Trigger
+CREATE TRIGGER trigger_delete_users
+    BEFORE DELETE ON users
+    FOR EACH ROW EXECUTE FUNCTION delete_blogs_when_user_delete();
+-- Trigger function
 CREATE OR REPLACE FUNCTION public.delete_blogs_when_user_delete()
     RETURNS trigger
     LANGUAGE plpgsql
