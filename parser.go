@@ -26,6 +26,6 @@ type Content struct {
 
 type DataType struct {
 	name           string
-	internalParams []int
-	externalParams []string
+	internalParams []int    // varchar(20), int(11), ...
+	externalParams []string // unsigned, current_timestamp, ...
 }
