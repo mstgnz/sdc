@@ -11,12 +11,12 @@ go get -u github.com/mstgnz/gosql
 ```
 
 ## Supported Databases
-* MySQL
-* Postgres
-* SQLite
-* Oracle 
-* MsSql
-
+* [ ] MySQL
+* [ ] Postgres
+* [ ] SQLite
+* [ ] Oracle 
+* [ ] MsSql  
+  will be ticked as it is completed
 
 ## Contributing
 Please refer to the contributions/ folder for detailed information on how to contribute.
