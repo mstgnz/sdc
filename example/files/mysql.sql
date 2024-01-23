@@ -1,14 +1,21 @@
-CREATE TABLE `blogs` (
-  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-  `title` varchar(100) NOT NULL,
-  `slug` varchar(110) DEFAULT NULL COMMENT 'Title Slug',
-  `user_id` bigint(20) unsigned NOT NULL,
-  `tutar` decimal(7,2) NOT NULL,
-  `short_text` varchar(255) NOT NULL,
-  `long_text` text NOT NULL,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() on update current_timestamp(),
-  PRIMARY KEY (`id`),
-  KEY `user_id` (`user_id`),
-  CONSTRAINT `blogs_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=15 DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_turkish_ci;
+-- Sequence and defined type
+CREATE TABLE IF NOT
+    EXISTS blogs_id_seq(id INT AUTO_INCREMENT PRIMARY KEY);
+
+-- Table Definition
+CREATE TABLE blogs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    slug VARCHAR(255),
+    user_id INT NOT NULL,
+    short_text VARCHAR(255) NOT NULL,
+    long_text TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL,
+    CONSTRAINT blogs_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Column Comment
+COMMENT ON COLUMN
+
+    blogs.slug IS 'Title Slug';

@@ -17,18 +17,3 @@ CREATE TABLE "public"."blogs" (
 
 -- Column Comment
 COMMENT ON COLUMN "public"."blogs"."slug" IS 'Title Slug';
-
--- Trigger
-CREATE TRIGGER trigger_delete_users
-    BEFORE DELETE ON users
-    FOR EACH ROW EXECUTE FUNCTION delete_blogs_when_user_delete();
--- Trigger function
-CREATE OR REPLACE FUNCTION public.delete_blogs_when_user_delete()
-    RETURNS trigger
-    LANGUAGE plpgsql
-AS $function$
-BEGIN
-    DELETE FROM blogs WHERE user_id = OLD.id;
-    RETURN OLD;
-END;
-$function$
