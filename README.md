@@ -19,7 +19,7 @@ go get -u github.com/mstgnz/gosql
   will be ticked as it is completed
 
 ## Contributing
-Please refer to the contributions/ folder for detailed information on how to contribute.
+This project is open-source, and contributions are welcome. Feel free to contribute or provide feedback of any kind.
 
 
 ## License
