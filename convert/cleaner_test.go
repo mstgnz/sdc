@@ -19,7 +19,7 @@ func Test_cleaner(t *testing.T) {
 	}
 	for i, tt := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			got, err := cleaner(tt.args.fileName)
+			got, err := Cleaner(tt.args.fileName)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("cleaner() error = %v, wantErr %v", err, tt.wantErr)
 				return
