@@ -6,147 +6,274 @@ import (
 	"sync"
 )
 
-// Container addiction injection container
+// Container represents a dependency injection container
 type Container struct {
 	mu        sync.RWMutex
-	services  map[reflect.Type]interface{}
-	factories map[reflect.Type]interface{}
+	services  map[reflect.Type]service
+	factories map[reflect.Type]factory
 }
 
-// NewContainer creates a new DI container
-func NewContainer() *Container {
-	return &Container{
-		services:  make(map[reflect.Type]interface{}),
-		factories: make(map[reflect.Type]interface{}),
+// service represents a singleton service instance
+type service struct {
+	value        interface{}
+	dependencies []reflect.Type
+	initialized  bool
+}
+
+// factory represents a factory for creating service instances
+type factory struct {
+	constructor  interface{}
+	dependencies []reflect.Type
+	scope        Scope
+}
+
+// Scope defines the lifecycle of a service
+type Scope int
+
+const (
+	// Singleton services are created once and reused
+	Singleton Scope = iota
+	// Transient services are created each time they are requested
+	Transient
+	// Scoped services are created once per scope
+	Scoped
+)
+
+// Option represents a container configuration option
+type Option func(*Container)
+
+// New creates a new dependency injection container
+func New(options ...Option) *Container {
+	c := &Container{
+		services:  make(map[reflect.Type]service),
+		factories: make(map[reflect.Type]factory),
 	}
+
+	for _, option := range options {
+		option(c)
+	}
+
+	return c
 }
 
-// Register registers a service to a container
-func (c *Container) Register(service interface{}) error {
+// Register registers a service with its implementation
+func (c *Container) Register(iface, impl interface{}, scope Scope) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	t := reflect.TypeOf(service)
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
+	ifaceType := reflect.TypeOf(iface)
+	if ifaceType.Kind() != reflect.Ptr {
+		return fmt.Errorf("interface must be a pointer type")
 	}
 
-	if _, exists := c.services[t]; exists {
-		return fmt.Errorf("service already registered for type: %v", t)
+	implType := reflect.TypeOf(impl)
+	if !implType.Implements(ifaceType.Elem()) {
+		return fmt.Errorf("implementation does not implement interface")
 	}
 
-	c.services[t] = service
+	dependencies, err := c.analyzeDependencies(implType)
+	if err != nil {
+		return fmt.Errorf("failed to analyze dependencies: %w", err)
+	}
+
+	switch scope {
+	case Singleton:
+		c.services[ifaceType] = service{
+			value:        impl,
+			dependencies: dependencies,
+		}
+	case Transient, Scoped:
+		c.factories[ifaceType] = factory{
+			constructor:  impl,
+			dependencies: dependencies,
+			scope:        scope,
+		}
+	}
+
 	return nil
 }
 
-// RegisterFactory registers a factory to a container
-func (c *Container) RegisterFactory(factory interface{}) error {
+// RegisterFactory registers a factory function for creating service instances
+func (c *Container) RegisterFactory(iface interface{}, factoryFn interface{}, scope Scope) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	t := reflect.TypeOf(factory)
-	if t.Kind() != reflect.Func {
+	ifaceType := reflect.TypeOf(iface)
+	if ifaceType.Kind() != reflect.Ptr {
+		return fmt.Errorf("interface must be a pointer type")
+	}
+
+	factoryType := reflect.TypeOf(factoryFn)
+	if factoryType.Kind() != reflect.Func {
 		return fmt.Errorf("factory must be a function")
 	}
 
-	if t.NumOut() != 1 && t.NumOut() != 2 {
-		return fmt.Errorf("factory must return exactly one or two values (service, error)")
+	if factoryType.NumOut() != 1 || !factoryType.Out(0).Implements(ifaceType.Elem()) {
+		return fmt.Errorf("factory must return interface type")
 	}
 
-	serviceType := t.Out(0)
-	if _, exists := c.factories[serviceType]; exists {
-		return fmt.Errorf("factory already registered for type: %v", serviceType)
+	dependencies, err := c.analyzeDependencies(factoryType)
+	if err != nil {
+		return fmt.Errorf("failed to analyze factory dependencies: %w", err)
 	}
 
-	c.factories[serviceType] = factory
+	c.factories[ifaceType] = factory{
+		constructor:  factoryFn,
+		dependencies: dependencies,
+		scope:        scope,
+	}
+
 	return nil
 }
 
-// Resolve resolves a service from container
-func (c *Container) Resolve(target interface{}) error {
+// Resolve resolves a service instance
+func (c *Container) Resolve(iface interface{}) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	targetValue := reflect.ValueOf(target)
-	if targetValue.Kind() != reflect.Ptr {
-		return fmt.Errorf("target must be a pointer")
+	ifaceType := reflect.TypeOf(iface)
+	if ifaceType.Kind() != reflect.Ptr {
+		return fmt.Errorf("interface must be a pointer type")
 	}
 
-	targetType := targetValue.Elem().Type()
-
-	// First check if it is registered as a direct service
-	if service, exists := c.services[targetType]; exists {
-		targetValue.Elem().Set(reflect.ValueOf(service))
-		return nil
-	}
-
-	// See if it is a service that needs to be created with Factory
-	if factory, exists := c.factories[targetType]; exists {
-		factoryValue := reflect.ValueOf(factory)
-		results := factoryValue.Call(nil)
-
-		if len(results) == 2 && !results[1].IsNil() {
-			return results[1].Interface().(error)
-		}
-
-		targetValue.Elem().Set(results[0])
-		return nil
-	}
-
-	return fmt.Errorf("no service or factory registered for type: %v", targetType)
-}
-
-// ResolveAll resolves all services of the specified type
-func (c *Container) ResolveAll(target interface{}) error {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	targetValue := reflect.ValueOf(target)
-	if targetValue.Kind() != reflect.Ptr || targetValue.Elem().Kind() != reflect.Slice {
-		return fmt.Errorf("target must be a pointer to slice")
-	}
-
-	sliceType := targetValue.Elem().Type()
-	elementType := sliceType.Elem()
-
-	var services []reflect.Value
-
-	// Collect registered services
-	for t, s := range c.services {
-		if t.AssignableTo(elementType) {
-			services = append(services, reflect.ValueOf(s))
-		}
-	}
-
-	// Create services from factories
-	for t, f := range c.factories {
-		if t.AssignableTo(elementType) {
-			factoryValue := reflect.ValueOf(f)
-			results := factoryValue.Call(nil)
-
-			if len(results) == 2 && !results[1].IsNil() {
-				return results[1].Interface().(error)
+	// Check for singleton service
+	if svc, ok := c.services[ifaceType]; ok {
+		if !svc.initialized {
+			if err := c.initializeService(&svc); err != nil {
+				return err
 			}
+			c.services[ifaceType] = svc
+		}
+		reflect.ValueOf(iface).Elem().Set(reflect.ValueOf(svc.value))
+		return nil
+	}
 
-			services = append(services, results[0])
+	// Check for factory
+	if f, ok := c.factories[ifaceType]; ok {
+		instance, err := c.createInstance(f)
+		if err != nil {
+			return err
+		}
+		reflect.ValueOf(iface).Elem().Set(reflect.ValueOf(instance))
+		return nil
+	}
+
+	return fmt.Errorf("no registration found for type %v", ifaceType)
+}
+
+// analyzeDependencies analyzes the dependencies of a type
+func (c *Container) analyzeDependencies(t reflect.Type) ([]reflect.Type, error) {
+	var dependencies []reflect.Type
+
+	switch t.Kind() {
+	case reflect.Struct:
+		for i := 0; i < t.NumField(); i++ {
+			field := t.Field(i)
+			if field.Tag.Get("inject") != "" {
+				dependencies = append(dependencies, field.Type)
+			}
+		}
+	case reflect.Func:
+		for i := 0; i < t.NumIn(); i++ {
+			dependencies = append(dependencies, t.In(i))
 		}
 	}
 
-	// Export results to slice
-	result := reflect.MakeSlice(sliceType, len(services), len(services))
-	for i, service := range services {
-		result.Index(i).Set(service)
+	return dependencies, nil
+}
+
+// initializeService initializes a service by injecting its dependencies
+func (c *Container) initializeService(svc *service) error {
+	val := reflect.ValueOf(svc.value)
+	if val.Kind() == reflect.Ptr {
+		val = val.Elem()
 	}
 
-	targetValue.Elem().Set(result)
+	for _, depType := range svc.dependencies {
+		field := val.FieldByName(depType.Name())
+		if !field.IsValid() || !field.CanSet() {
+			continue
+		}
+
+		dep := reflect.New(depType).Interface()
+		if err := c.Resolve(dep); err != nil {
+			return fmt.Errorf("failed to resolve dependency %v: %w", depType, err)
+		}
+
+		field.Set(reflect.ValueOf(dep).Elem())
+	}
+
+	svc.initialized = true
 	return nil
 }
 
-// Clear clears container
-func (c *Container) Clear() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+// createInstance creates a new instance using a factory
+func (c *Container) createInstance(f factory) (interface{}, error) {
+	args := make([]reflect.Value, len(f.dependencies))
+	for i, depType := range f.dependencies {
+		dep := reflect.New(depType).Interface()
+		if err := c.Resolve(dep); err != nil {
+			return nil, fmt.Errorf("failed to resolve dependency %v: %w", depType, err)
+		}
+		args[i] = reflect.ValueOf(dep).Elem()
+	}
 
-	c.services = make(map[reflect.Type]interface{})
-	c.factories = make(map[reflect.Type]interface{})
+	result := reflect.ValueOf(f.constructor).Call(args)
+	if len(result) != 1 {
+		return nil, fmt.Errorf("factory must return exactly one value")
+	}
+
+	return result[0].Interface(), nil
 }
+
+// Example usage in comments:
+/*
+	// Define interfaces
+	type Logger interface {
+		Log(message string)
+	}
+
+	type Database interface {
+		Connect() error
+	}
+
+	// Define implementations
+	type ConsoleLogger struct{}
+
+	func (l *ConsoleLogger) Log(message string) {
+		fmt.Println(message)
+	}
+
+	type PostgresDB struct {
+		Logger Logger `inject:""`
+		Config *Config
+	}
+
+	func (db *PostgresDB) Connect() error {
+		db.Logger.Log("Connecting to database...")
+		return nil
+	}
+
+	// Create container
+	container := di.New()
+
+	// Register services
+	container.Register((*Logger)(nil), &ConsoleLogger{}, di.Singleton)
+	container.Register((*Database)(nil), &PostgresDB{}, di.Singleton)
+
+	// Register factory
+	container.RegisterFactory((*Config)(nil), func() *Config {
+		return &Config{
+			Host: "localhost",
+			Port: 5432,
+		}
+	}, di.Transient)
+
+	// Resolve and use services
+	var db Database
+	if err := container.Resolve(&db); err != nil {
+		log.Fatal(err)
+	}
+
+	db.Connect()
+*/
