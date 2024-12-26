@@ -1,221 +1,169 @@
-# SDC - SQL Dump Converter
+# SDC (SQL Data Converter)
 
-SDC (SQL Dump Converter) is a powerful Go library that allows you to convert SQL dump files between different database systems. This library is particularly useful when you need to migrate a database schema from one system to another.
+A high-performance SQL parser and converter library written in Go, designed to handle large-scale database schema migrations and transformations.
 
 ## Features
 
-### Core Features
-- Convert SQL dump files to Go struct format
-- Schema conversion between different database systems
-- Supported SQL statements:
-  - CREATE TABLE
-  - ALTER TABLE
-  - DROP TABLE
-  - CREATE INDEX
-  - DROP INDEX
-- Advanced parser features:
-  - Schema analysis
-  - Data type conversions
-  - Constraint support
-  - Index management
+- **Multi-Database Support**: Parse and convert SQL schemas between different database systems
+  - PostgreSQL
+  - MySQL
+  - SQLite
+  - SQL Server
+  - Oracle
 
-### Advanced Features
-- Migration support
-  - Automatic migration table creation
-  - Migration apply and rollback
-  - Migration status tracking
-- Schema comparison
-  - Table comparison
-  - Column comparison
-  - Index comparison
-  - Constraint comparison
-- Extended data type conversions
-  - Special conversions for all popular databases
-  - Customizable conversion rules
-- Database connection management
-  - Connection pooling
-  - Automatic reconnection
-  - Connection status monitoring
+- **High Performance**:
+  - Memory-optimized processing
+  - Concurrent execution with worker pools
+  - Batch processing capabilities
+  - Streaming support for large files
 
-## Supported Databases
+- **Advanced Parsing**:
+  - CREATE TABLE statements
+  - ALTER TABLE operations
+  - DROP TABLE commands
+  - INDEX management
+  - Constraints handling
+  - Data type mappings
 
-- [x] MySQL
-- [x] PostgreSQL
-- [x] SQLite
-- [x] Oracle
-- [x] SQL Server
+- **Memory Management**:
+  - Efficient buffer pooling
+  - Garbage collection optimization
+  - Memory usage monitoring
+  - Resource cleanup
+
+## Requirements
+
+- Go 1.23 or higher
+- No external database dependencies required
 
 ## Installation
 
-### As Go Module
 ```bash
-go get -u github.com/mstgnz/sdc
+go get github.com/mstgnz/sdc
 ```
 
-### Using Docker
-```bash
-# Pull Docker image
-docker pull mstgnz/sdc:latest
-
-# or run with docker-compose
-docker-compose up -d
-```
-
-## Usage
-
-### Basic Example
-
-```go
-package main
-
-import (
-    "fmt"
-    "github.com/mstgnz/sdc"
-    "github.com/mstgnz/sdc/logger"
-)
-
-func main() {
-    // Create logger
-    log := logger.NewLogger(logger.Config{
-        Level:  logger.INFO,
-        Prefix: "[SDC] ",
-    })
-
-    // MySQL dump
-    mysqlDump := `CREATE TABLE users (
-        id INT PRIMARY KEY AUTO_INCREMENT,
-        username VARCHAR(50) NOT NULL UNIQUE,
-        email VARCHAR(100) NOT NULL
-    );`
-
-    // Create MySQL parser
-    parser := sdc.NewMySQLParser()
-
-    // Parse the dump
-    entity, err := parser.Parse(mysqlDump)
-    if err != nil {
-        log.Error("Parse error", map[string]interface{}{
-            "error": err.Error(),
-        })
-        return
-    }
-
-    // Convert to PostgreSQL
-    pgParser := sdc.NewPostgresParser()
-    pgSQL, err := pgParser.Convert(entity)
-    if err != nil {
-        log.Error("Conversion error", map[string]interface{}{
-            "error": err.Error(),
-        })
-        return
-    }
-
-    fmt.Println(pgSQL)
-}
-```
-
-### Migration Example
+## Quick Start
 
 ```go
 package main
 
 import (
     "context"
-    "github.com/mstgnz/sdc/migration"
+    "fmt"
+    "github.com/mstgnz/sdc/parser"
+    "time"
 )
 
 func main() {
-    // Create migration manager
-    manager := migration.NewMigrationManager(driver)
+    // Create context with timeout
+    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+    defer cancel()
 
-    // Apply migrations
-    err := manager.Apply(context.Background())
+    // Initialize parser with memory optimization
+    memOptimizer := parser.NewMemoryOptimizer(1024, 0.8) // 1GB max memory
+    go memOptimizer.MonitorMemory(ctx)
+
+    // Create PostgreSQL parser
+    postgresParser := parser.NewPostgresParser()
+
+    // Parse SQL
+    sql := `CREATE TABLE users (
+        id INT PRIMARY KEY,
+        username VARCHAR(50) NOT NULL,
+        email VARCHAR(100) UNIQUE,
+        created_at TIMESTAMP
+    )`
+
+    entity, err := postgresParser.Parse(sql)
     if err != nil {
         panic(err)
     }
+
+    fmt.Printf("Parsed table: %s\n", entity.Tables[0].Name)
 }
 ```
 
-### Schema Comparison Example
+## Advanced Usage
+
+### Worker Pool
 
 ```go
-package main
+wp := parser.NewWorkerPool(parser.WorkerConfig{
+    Workers:      4,
+    QueueSize:    1000,
+    MemOptimizer: memOptimizer,
+    ErrHandler: func(err error) {
+        log.Printf("Worker error: %v", err)
+    },
+})
 
-import (
-    "github.com/mstgnz/sdc/schema"
-)
-
-func main() {
-    // Create schema comparer
-    comparer := schema.NewSchemaComparer(sourceTables, targetTables)
-
-    // Find differences
-    differences := comparer.Compare()
-    for _, diff := range differences {
-        fmt.Printf("Type: %s, Name: %s, Change: %s\n", 
-            diff.Type, diff.Name, diff.ChangeType)
-    }
-}
+wp.Start(ctx)
+defer wp.Stop()
 ```
 
-## Development
+### Batch Processing
 
-### Requirements
-
-- Go 1.21 or higher
-- Docker (optional)
-
-### Testing
-
-```bash
-# Run all tests
-go test -v ./...
-
-# Run benchmark tests
-go test -bench=. ./...
+```go
+bp := parser.NewBatchProcessor(parser.BatchConfig{
+    BatchSize:    100,
+    Workers:      4,
+    Timeout:      30 * time.Second,
+    MemOptimizer: memOptimizer,
+    ErrorHandler: func(err error) {
+        log.Printf("Batch error: %v", err)
+    },
+})
 ```
 
-### Docker Build
+### Stream Processing
 
-```bash
-# Build image
-docker build -t sdc .
-
-# Run container
-docker run -d sdc
+```go
+sp := parser.NewStreamParser(parser.StreamParserConfig{
+    Workers:      4,
+    BatchSize:    1024 * 1024, // 1MB
+    BufferSize:   32 * 1024,   // 32KB
+    Timeout:      30 * time.Second,
+    MemOptimizer: memOptimizer,
+})
 ```
 
-## CI/CD
+## Performance Optimization
 
-The project includes automated CI/CD pipelines with GitHub Actions:
+The library includes several features for optimizing performance:
 
-- Automatic testing and building on every push
-- Lint checking on pull requests
-- Automatic release creation on tags
-- Automatic push to Docker Hub
-- Semantic versioning and automatic CHANGELOG
+1. **Memory Management**:
+   - Buffer pooling
+   - GC threshold control
+   - Memory usage monitoring
+
+2. **Concurrent Processing**:
+   - Worker pools
+   - Batch processing
+   - Stream parsing
+
+3. **Resource Management**:
+   - Automatic cleanup
+   - Resource pooling
+   - Timeout handling
 
 ## Contributing
 
-1. Fork this repository
-2. Create a new feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'feat: add amazing feature'`)
-4. Push your branch (`git push origin feature/amazing-feature`)
-5. Create a Pull Request
-
-## Commit Messages
-
-The project uses semantic versioning. Format your commit messages as follows:
-
-- `feat: ` - New feature
-- `fix: ` - Bug fix
-- `docs: ` - Documentation changes only
-- `style: ` - Code formatting changes
-- `refactor: ` - Code refactoring
-- `perf: ` - Performance improvements
-- `test: ` - Adding or modifying tests
-- `chore: ` - General maintenance
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ## License
 
-This project is licensed under the APACHE License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Acknowledgments
+
+- Thanks to all contributors who have helped with the development
+- Special thanks to the Go community for their excellent tools and libraries
+
+## Contact
+
+- GitHub: [@mstgnz](https://github.com/mstgnz)
+- Project Link: [https://github.com/mstgnz/sdc](https://github.com/mstgnz/sdc)
