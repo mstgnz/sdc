@@ -8,10 +8,19 @@ import (
 	"github.com/mstgnz/sdc"
 )
 
+// Precompiled regex patterns for better performance
+var (
+	postgresCreateTableRegex = regexp.MustCompile(`(?i)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:([^\s.]+)\.)?([^\s(]+)\s*\((.*)\)`)
+	postgresColumnRegex      = regexp.MustCompile(`(?i)^\s*"?([^"\s(]+)"?\s+([^(,\s]+)(?:\s*\(([^)]+)\))?\s*(.*)$`)
+	postgresDefaultRegex     = regexp.MustCompile(`(?i)DEFAULT\s+([^,\s]+|'[^']*'|"[^"]*")`)
+	postgresSerialRegex      = regexp.MustCompile(`(?i)^(SMALL|BIG)?SERIAL$`)
+)
+
 // PostgresParser implements the parser for PostgreSQL database
 type PostgresParser struct {
-	dbInfo       DatabaseInfo
-	currentTable *sdc.Table // Geçerli işlenen tablo
+	dbInfo DatabaseInfo
+	// Add buffer pool for string builders to reduce allocations
+	builderPool strings.Builder
 }
 
 // NewPostgresParser creates a new PostgreSQL parser
@@ -23,168 +32,74 @@ func NewPostgresParser() *PostgresParser {
 
 // Parse converts PostgreSQL dump to Entity structure
 func (p *PostgresParser) Parse(sql string) (*sdc.Entity, error) {
-	entity := &sdc.Entity{}
+	entity := &sdc.Entity{
+		Tables: make([]*sdc.Table, 0), // Pre-allocate slice
+	}
 
-	// Find CREATE TABLE statements
-	createTableRegex := regexp.MustCompile(`(?i)CREATE\s+(?:UNLOGGED\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s(]+)\s*\((.*?)\)(?:\s+INHERITS\s*\((.*?)\))?(?:\s+PARTITION\s+BY\s+(.*?))?(?:\s+WITH\s*\((.*?)\))?(?:\s+TABLESPACE\s+(\w+))?;?`)
-	matches := createTableRegex.FindStringSubmatch(sql)
+	// Remove comments and normalize whitespace once
+	sql = removeComments(sql)
+	sql = strings.TrimSpace(sql)
 
-	if len(matches) > 0 {
-		table, err := p.parseCreateTable(sql)
-		if err != nil {
-			return nil, err
+	// Split SQL statements efficiently
+	statements := strings.Split(sql, ";")
+	for _, stmt := range statements {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" {
+			continue
 		}
-		entity.Tables = append(entity.Tables, table)
+
+		// Process CREATE TABLE statements
+		if strings.HasPrefix(strings.ToUpper(stmt), "CREATE TABLE") {
+			table, err := p.parseCreateTable(stmt)
+			if err != nil {
+				return nil, err
+			}
+			entity.Tables = append(entity.Tables, table)
+		}
 	}
 
 	return entity, nil
 }
 
-// parseCreateTable parses CREATE TABLE statement
-func (p *PostgresParser) parseCreateTable(sql string) (*sdc.Table, error) {
-	table := &sdc.Table{}
-
-	// Extract basic table information
-	tableRegex := regexp.MustCompile(`(?i)CREATE\s+(?:UNLOGGED\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s(]+)\s*\((.*?)\)(?:\s+INHERITS\s*\((.*?)\))?(?:\s+PARTITION\s+BY\s+(.*?))?(?:\s+WITH\s*\((.*?)\))?(?:\s+TABLESPACE\s+(\w+))?;?`)
-	matches := tableRegex.FindStringSubmatch(sql)
-
-	if len(matches) < 2 {
-		return nil, fmt.Errorf("invalid CREATE TABLE statement")
-	}
-
-	// Set table name
-	table.Name = matches[1]
-
-	// Parse column definitions
-	columnDefs := strings.Split(matches[2], ",")
-	var comments []string
-
-	for _, columnDef := range columnDefs {
-		columnDef = strings.TrimSpace(columnDef)
-		if columnDef == "" {
-			continue
-		}
-
-		// Check for constraints
-		if strings.HasPrefix(strings.ToUpper(columnDef), "CONSTRAINT") ||
-			strings.HasPrefix(strings.ToUpper(columnDef), "PRIMARY KEY") ||
-			strings.HasPrefix(strings.ToUpper(columnDef), "FOREIGN KEY") ||
-			strings.HasPrefix(strings.ToUpper(columnDef), "UNIQUE") {
-			comments = append(comments, columnDef)
-			continue
-		}
-
-		// Check for CHECK constraints
-		if strings.HasPrefix(strings.ToUpper(columnDef), "CHECK") {
-			checkRegex := regexp.MustCompile(`(?i)CHECK\s*\((.*?)\)`)
-			checkMatches := checkRegex.FindStringSubmatch(columnDef)
-			if len(checkMatches) > 1 {
-				comments = append(comments, fmt.Sprintf("CHECK (%s)", checkMatches[1]))
-			}
-			continue
-		}
-
-		// Check for LIKE definition
-		if strings.HasPrefix(strings.ToUpper(columnDef), "LIKE") {
-			comments = append(comments, columnDef)
-			continue
-		}
-
-		// Parse column definition
-		column := p.parseColumn(columnDef)
-		if column != nil {
-			table.Columns = append(table.Columns, column)
-		}
-	}
-
-	if len(comments) > 0 {
-		table.Comment = strings.Join(comments, ", ")
-	}
-
-	return table, nil
-}
-
-// parseColumn parses column definition
-func (p *PostgresParser) parseColumn(columnDef string) *sdc.Column {
-	column := &sdc.Column{}
-
-	// Split column name and data type
-	parts := strings.Fields(columnDef)
-	if len(parts) < 2 {
-		return nil
-	}
-
-	column.Name = parts[0]
-
-	// Parse data type and length/scale information
-	dataTypeRegex := regexp.MustCompile(`(?i)(\w+(?:\s+\w+)?)\s*(?:\(([^)]+)\))?`)
-	dataTypeMatches := dataTypeRegex.FindStringSubmatch(parts[1])
-
-	if len(dataTypeMatches) > 1 {
-		dataType := &sdc.DataType{
-			Name: strings.ToUpper(dataTypeMatches[1]),
-		}
-
-		// Parse length and scale information
-		if len(dataTypeMatches) > 2 && dataTypeMatches[2] != "" {
-			precisionScale := strings.Split(dataTypeMatches[2], ",")
-			if len(precisionScale) > 0 {
-				if strings.Contains(dataType.Name, "NUMERIC") || strings.Contains(dataType.Name, "DECIMAL") {
-					dataType.Precision = parseInt(precisionScale[0])
-					if len(precisionScale) > 1 {
-						dataType.Scale = parseInt(precisionScale[1])
-					}
-				} else {
-					dataType.Length = parseInt(precisionScale[0])
-				}
-			}
-		}
-
-		column.DataType = dataType
-	}
-
-	// Check for NOT NULL constraint
-	if strings.Contains(strings.ToUpper(columnDef), "NOT NULL") {
-		column.IsNullable = false
-	} else {
-		column.IsNullable = true
-	}
-
-	// Check for DEFAULT value
-	defaultRegex := regexp.MustCompile(`(?i)DEFAULT\s+([^,\s]+)`)
-	defaultMatches := defaultRegex.FindStringSubmatch(columnDef)
-	if len(defaultMatches) > 1 {
-		column.Default = defaultMatches[1]
-	}
-
-	// Check for COLLATE definition
-	collateRegex := regexp.MustCompile(`(?i)COLLATE\s+"([^"]+)"`)
-	collateMatches := collateRegex.FindStringSubmatch(columnDef)
-	if len(collateMatches) > 1 {
-		column.Collation = collateMatches[1]
-	}
-
-	return column
-}
-
-// Convert transforms Entity structure to PostgreSQL format
+// Convert transforms Entity structure to PostgreSQL format with optimized string handling
 func (p *PostgresParser) Convert(entity *sdc.Entity) (string, error) {
-	var result strings.Builder
+	// Reset and reuse string builder
+	p.builderPool.Reset()
+	result := &p.builderPool
 
 	for _, table := range entity.Tables {
 		// CREATE TABLE statement
-		result.WriteString(fmt.Sprintf("CREATE TABLE %s (\n", table.Name))
+		result.WriteString("CREATE TABLE ")
+		if table.Schema != "" {
+			result.WriteString(table.Schema)
+			result.WriteString(".")
+		}
+		result.WriteString(table.Name)
+		result.WriteString(" (\n")
 
 		// Columns
 		for i, column := range table.Columns {
-			result.WriteString(fmt.Sprintf("    %s %s", column.Name, p.convertDataType(column.DataType)))
+			result.WriteString("\t")
+			result.WriteString(column.Name)
+			result.WriteString(" ")
+			result.WriteString(p.convertDataType(column.DataType))
+
+			if column.Collation != "" {
+				result.WriteString(" COLLATE ")
+				result.WriteString(column.Collation)
+			}
 
 			if !column.IsNullable {
 				result.WriteString(" NOT NULL")
 			}
 
 			if column.Default != "" {
-				result.WriteString(fmt.Sprintf(" DEFAULT %s", column.Default))
+				result.WriteString(" DEFAULT ")
+				result.WriteString(column.Default)
+			}
+
+			if column.AutoIncrement {
+				result.WriteString(" GENERATED ALWAYS AS IDENTITY")
 			}
 
 			if i < len(table.Columns)-1 {
@@ -229,24 +144,244 @@ func (p *PostgresParser) Convert(entity *sdc.Entity) (string, error) {
 	return result.String(), nil
 }
 
+// parseCreateTable parses CREATE TABLE statement with optimized string handling
+func (p *PostgresParser) parseCreateTable(sql string) (*sdc.Table, error) {
+	matches := postgresCreateTableRegex.FindStringSubmatch(sql)
+	if len(matches) < 4 {
+		return nil, fmt.Errorf("invalid CREATE TABLE statement")
+	}
+
+	table := &sdc.Table{
+		Schema:      strings.Trim(matches[1], "\""),
+		Name:        strings.Trim(matches[2], "\""),
+		Columns:     make([]*sdc.Column, 0),     // Pre-allocate slices
+		Constraints: make([]*sdc.Constraint, 0), // Pre-allocate slices
+	}
+
+	// Parse column definitions efficiently
+	defs := splitWithParentheses(matches[3])
+	for _, def := range defs {
+		def = strings.TrimSpace(def)
+		if def == "" {
+			continue
+		}
+
+		// Parse constraints
+		upperDef := strings.ToUpper(def)
+		if strings.HasPrefix(upperDef, "CONSTRAINT") ||
+			strings.HasPrefix(upperDef, "PRIMARY KEY") ||
+			strings.HasPrefix(upperDef, "FOREIGN KEY") ||
+			strings.HasPrefix(upperDef, "UNIQUE") {
+			constraint := p.parseConstraint(def)
+			if constraint != nil {
+				table.Constraints = append(table.Constraints, constraint)
+			}
+			continue
+		}
+
+		// Parse column definition
+		column := p.parseColumn(def)
+		if column != nil {
+			table.Columns = append(table.Columns, column)
+		}
+	}
+
+	return table, nil
+}
+
+// parseColumn parses column definition with optimized string handling
+func (p *PostgresParser) parseColumn(columnDef string) *sdc.Column {
+	matches := postgresColumnRegex.FindStringSubmatch(columnDef)
+	if len(matches) < 3 {
+		return nil
+	}
+
+	column := &sdc.Column{
+		Name:       strings.Trim(matches[1], "\""),
+		IsNullable: true, // Default to nullable
+		Nullable:   true,
+	}
+
+	// Parse data type
+	dataType := &sdc.DataType{
+		Name: matches[2],
+	}
+
+	// Check for SERIAL types
+	if postgresSerialRegex.MatchString(dataType.Name) {
+		column.AutoIncrement = true
+		// Convert SERIAL to INTEGER
+		switch strings.ToUpper(dataType.Name) {
+		case "SMALLSERIAL":
+			dataType.Name = "SMALLINT"
+		case "SERIAL":
+			dataType.Name = "INTEGER"
+		case "BIGSERIAL":
+			dataType.Name = "BIGINT"
+		}
+	}
+
+	// Parse length/precision/scale
+	if matches[3] != "" {
+		parts := strings.Split(matches[3], ",")
+		if len(parts) > 0 {
+			if dataType.Name == "numeric" || dataType.Name == "decimal" {
+				dataType.Precision, _ = parseNumber(parts[0])
+				if len(parts) > 1 {
+					dataType.Scale, _ = parseNumber(parts[1])
+				}
+			} else {
+				dataType.Length, _ = parseNumber(parts[0])
+			}
+		}
+	}
+
+	column.DataType = dataType
+
+	// Parse additional properties
+	rest := matches[4]
+	if rest != "" {
+		// Check for DEFAULT
+		if defaultMatches := postgresDefaultRegex.FindStringSubmatch(rest); defaultMatches != nil {
+			column.Default = defaultMatches[1]
+		}
+
+		// Check for NOT NULL
+		if strings.Contains(strings.ToUpper(rest), "NOT NULL") {
+			column.IsNullable = false
+			column.Nullable = false
+		}
+
+		// Check for PRIMARY KEY
+		if strings.Contains(strings.ToUpper(rest), "PRIMARY KEY") {
+			column.PrimaryKey = true
+			column.IsNullable = false
+			column.Nullable = false
+		}
+
+		// Check for UNIQUE
+		if strings.Contains(strings.ToUpper(rest), "UNIQUE") {
+			column.Unique = true
+		}
+	}
+
+	return column
+}
+
+// parseConstraint parses constraint definition
+func (p *PostgresParser) parseConstraint(constraintDef string) *sdc.Constraint {
+	constraint := &sdc.Constraint{}
+
+	// Split constraint definition into parts
+	parts := strings.Fields(constraintDef)
+	if len(parts) < 2 {
+		return nil
+	}
+
+	// Check if it starts with CONSTRAINT keyword
+	startIdx := 0
+	if strings.ToUpper(parts[0]) == "CONSTRAINT" {
+		if len(parts) < 3 {
+			return nil
+		}
+		constraint.Name = strings.Trim(parts[1], "\"")
+		startIdx = 2
+	}
+
+	// Parse constraint type and details
+	constraintType := strings.ToUpper(parts[startIdx])
+	switch constraintType {
+	case "PRIMARY":
+		if startIdx+1 < len(parts) && strings.ToUpper(parts[startIdx+1]) == "KEY" {
+			constraint.Type = "PRIMARY KEY"
+			// Parse columns
+			if startIdx+2 < len(parts) && strings.HasPrefix(parts[startIdx+2], "(") {
+				colStr := strings.Trim(parts[startIdx+2], "()")
+				cols := strings.Split(colStr, ",")
+				for _, col := range cols {
+					constraint.Columns = append(constraint.Columns, strings.Trim(col, "\""))
+				}
+			}
+		}
+	case "FOREIGN":
+		if startIdx+1 < len(parts) && strings.ToUpper(parts[startIdx+1]) == "KEY" {
+			constraint.Type = "FOREIGN KEY"
+			// Parse columns
+			nextIdx := startIdx + 2
+			if nextIdx < len(parts) && strings.HasPrefix(parts[nextIdx], "(") {
+				colStr := strings.Trim(parts[nextIdx], "()")
+				cols := strings.Split(colStr, ",")
+				for _, col := range cols {
+					constraint.Columns = append(constraint.Columns, strings.Trim(col, "\""))
+				}
+				nextIdx++
+			}
+			// Parse REFERENCES
+			for i := nextIdx; i < len(parts); i++ {
+				if strings.ToUpper(parts[i]) == "REFERENCES" {
+					if i+1 < len(parts) {
+						constraint.RefTable = strings.Trim(parts[i+1], "\"")
+						i++
+						if i+1 < len(parts) && strings.HasPrefix(parts[i+1], "(") {
+							refColStr := strings.Trim(parts[i+1], "()")
+							refCols := strings.Split(refColStr, ",")
+							for _, col := range refCols {
+								constraint.RefColumns = append(constraint.RefColumns, strings.Trim(col, "\""))
+							}
+							i++
+						}
+					}
+					// Parse ON DELETE/UPDATE actions
+					for j := i + 1; j < len(parts); j++ {
+						if strings.ToUpper(parts[j]) == "ON" && j+2 < len(parts) {
+							action := strings.ToUpper(parts[j+1])
+							if action == "DELETE" {
+								constraint.OnDelete = strings.ToUpper(parts[j+2])
+								j += 2
+								i = j
+							} else if action == "UPDATE" {
+								constraint.OnUpdate = strings.ToUpper(parts[j+2])
+								j += 2
+								i = j
+							}
+						}
+					}
+					break
+				}
+			}
+		}
+	case "UNIQUE":
+		constraint.Type = "UNIQUE"
+		// Parse columns
+		if startIdx+1 < len(parts) && strings.HasPrefix(parts[startIdx+1], "(") {
+			colStr := strings.Trim(parts[startIdx+1], "()")
+			cols := strings.Split(colStr, ",")
+			for _, col := range cols {
+				constraint.Columns = append(constraint.Columns, strings.Trim(col, "\""))
+			}
+		}
+	}
+
+	return constraint
+}
+
 // convertDataType converts data type to PostgreSQL format
 func (p *PostgresParser) convertDataType(dataType *sdc.DataType) string {
 	if dataType == nil {
 		return "text"
 	}
 
-	// Sütun sayısı kontrolü
-	if p.dbInfo.MaxColumns > 0 && p.currentTable != nil && len(p.currentTable.Columns) >= p.dbInfo.MaxColumns {
-		// Hata durumunda varsayılan tip dönüyoruz
-		return "text"
-	}
-
 	switch strings.ToUpper(dataType.Name) {
-	case "VARCHAR", "NVARCHAR", "CHAR", "NCHAR":
+	case "VARCHAR", "NVARCHAR":
 		if dataType.Length > 0 {
-			return fmt.Sprintf("%s(%d)", strings.ToLower(dataType.Name), dataType.Length)
+			return fmt.Sprintf("varchar(%d)", dataType.Length)
 		}
 		return "text"
+	case "CHAR", "NCHAR":
+		if dataType.Length > 0 {
+			return fmt.Sprintf("char(%d)", dataType.Length)
+		}
+		return "char"
 	case "INT", "INTEGER":
 		return "integer"
 	case "BIGINT":
@@ -261,17 +396,20 @@ func (p *PostgresParser) convertDataType(dataType *sdc.DataType) string {
 			return fmt.Sprintf("numeric(%d)", dataType.Precision)
 		}
 		return "numeric"
-	case "FLOAT", "REAL":
-		return "real"
-	case "DOUBLE", "DOUBLE PRECISION":
-		return "double precision"
+	case "FLOAT":
+		if dataType.Precision > 0 {
+			return fmt.Sprintf("float(%d)", dataType.Precision)
+		}
+		return "float8"
+	case "REAL":
+		return "float4"
 	case "BOOLEAN", "BIT":
 		return "boolean"
 	case "DATE":
 		return "date"
 	case "TIME":
 		return "time"
-	case "TIMESTAMP":
+	case "DATETIME", "TIMESTAMP":
 		return "timestamp"
 	case "TEXT", "NTEXT", "CLOB":
 		return "text"
