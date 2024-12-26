@@ -1,19 +1,303 @@
--- Sequence and defined type
-CREATE SEQUENCE IF NOT EXISTS blogs_id_seq;
+-- Sequence ve tanımlı tipler
+CREATE SEQUENCE IF NOT EXISTS users_id_seq;
+CREATE SEQUENCE IF NOT EXISTS products_id_seq;
+CREATE SEQUENCE IF NOT EXISTS orders_id_seq;
 
--- Table Definition
-CREATE TABLE "public"."blogs" (
-    "id" int8 NOT NULL DEFAULT nextval('blogs_id_seq'::regclass),
-    "title" varchar NOT NULL,
-    "slug" varchar,
-    "user_id" int8 NOT NULL,
-    "short_text" varchar NOT NULL,
-    "long_text" text NOT NULL,
-    "created_at" timestamp NOT NULL DEFAULT now(),
-    "updated_at" timestamp NOT NULL,
-    CONSTRAINT "blogs_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE,
-    PRIMARY KEY ("id")
+-- Enum tipi tanımlama
+CREATE TYPE user_status AS ENUM ('active', 'inactive', 'suspended');
+CREATE TYPE order_status AS ENUM ('pending', 'processing', 'completed', 'cancelled');
+
+-- Users tablosu
+CREATE TABLE "public"."users" (
+    "id" bigint NOT NULL DEFAULT nextval('users_id_seq'::regclass),
+    "username" varchar(50) NOT NULL,
+    "email" varchar(100) NOT NULL UNIQUE,
+    "status" user_status DEFAULT 'active',
+    "created_at" timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "users_pkey" PRIMARY KEY ("id")
 );
 
--- Column Comment
-COMMENT ON COLUMN "public"."blogs"."slug" IS 'Title Slug';
+-- Products tablosu
+CREATE TABLE "public"."products" (
+    "id" bigint NOT NULL DEFAULT nextval('products_id_seq'::regclass),
+    "name" varchar(100) NOT NULL,
+    "description" text,
+    "price" decimal(10,2) NOT NULL CHECK (price >= 0),
+    "stock" integer NOT NULL DEFAULT 0 CHECK (stock >= 0),
+    "metadata" jsonb,
+    "is_active" boolean DEFAULT true,
+    "created_at" timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "products_pkey" PRIMARY KEY ("id")
+);
+
+-- Orders tablosu
+CREATE TABLE "public"."orders" (
+    "id" bigint NOT NULL DEFAULT nextval('orders_id_seq'::regclass),
+    "user_id" bigint NOT NULL,
+    "status" order_status DEFAULT 'pending',
+    "total_amount" decimal(12,2) NOT NULL CHECK (total_amount >= 0),
+    "shipping_address" text NOT NULL,
+    "order_date" timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    "delivery_date" timestamp with time zone,
+    "metadata" jsonb,
+    CONSTRAINT "orders_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "orders_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE CASCADE
+);
+
+-- Order Items tablosu (çoka-çok ilişki)
+CREATE TABLE "public"."order_items" (
+    "order_id" bigint NOT NULL,
+    "product_id" bigint NOT NULL,
+    "quantity" integer NOT NULL CHECK (quantity > 0),
+    "unit_price" decimal(10,2) NOT NULL CHECK (unit_price >= 0),
+    "total_price" decimal(10,2) GENERATED ALWAYS AS (quantity * unit_price) STORED,
+    CONSTRAINT "order_items_pkey" PRIMARY KEY ("order_id", "product_id"),
+    CONSTRAINT "order_items_order_id_fkey" FOREIGN KEY ("order_id") REFERENCES "public"."orders"("id") ON DELETE CASCADE,
+    CONSTRAINT "order_items_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products"("id") ON DELETE RESTRICT
+);
+
+-- İndeksler
+CREATE INDEX idx_users_email ON "public"."users" USING btree ("email");
+CREATE INDEX idx_products_name ON "public"."products" USING btree ("name");
+CREATE INDEX idx_orders_user_id ON "public"."orders" USING btree ("user_id");
+CREATE INDEX idx_orders_status ON "public"."orders" USING btree ("status");
+CREATE INDEX idx_order_items_product ON "public"."order_items" USING btree ("product_id");
+
+-- Partition örneği
+CREATE TABLE "public"."order_history" (
+    "id" bigint NOT NULL,
+    "order_id" bigint NOT NULL,
+    "status" order_status NOT NULL,
+    "changed_at" timestamp with time zone DEFAULT CURRENT_TIMESTAMP
+) PARTITION BY RANGE (changed_at);
+
+-- Partition tabloları
+CREATE TABLE order_history_2023 PARTITION OF order_history
+    FOR VALUES FROM ('2023-01-01') TO ('2024-01-01');
+CREATE TABLE order_history_2024 PARTITION OF order_history
+    FOR VALUES FROM ('2024-01-01') TO ('2025-01-01');
+
+-- View örneği
+CREATE VIEW "public"."order_summary" AS
+SELECT 
+    o.id as order_id,
+    u.username,
+    o.total_amount,
+    o.status,
+    o.order_date,
+    COUNT(oi.product_id) as total_items
+FROM "public"."orders" o
+JOIN "public"."users" u ON o.user_id = u.id
+JOIN "public"."order_items" oi ON o.id = oi.order_id
+GROUP BY o.id, u.username, o.total_amount, o.status, o.order_date;
+
+-- Kolonlara açıklama ekleme
+COMMENT ON TABLE "public"."users" IS 'Kullanıcı bilgilerinin tutulduğu tablo';
+COMMENT ON COLUMN "public"."users"."email" IS 'Kullanıcı email adresi';
+COMMENT ON TABLE "public"."products" IS 'Ürün bilgilerinin tutulduğu tablo';
+COMMENT ON TABLE "public"."orders" IS 'Sipariş bilgilerinin tutulduğu tablo';
+COMMENT ON TABLE "public"."order_items" IS 'Sipariş detaylarının tutulduğu tablo';
+
+-- DDL Komut Örnekleri
+-- CREATE DATABASE örneği
+CREATE DATABASE ecommerce
+    WITH 
+    OWNER = postgres
+    ENCODING = 'UTF8'
+    LC_COLLATE = 'en_US.UTF-8'
+    LC_CTYPE = 'en_US.UTF-8'
+    TABLESPACE = pg_default
+    CONNECTION LIMIT = -1;
+
+-- DROP DATABASE örneği (yorum satırı olarak)
+-- DROP DATABASE IF EXISTS ecommerce;
+
+-- ALTER DATABASE örneği
+ALTER DATABASE ecommerce
+    SET search_path = public, extensions;
+
+-- CREATE SCHEMA örneği
+CREATE SCHEMA IF NOT EXISTS app
+    AUTHORIZATION postgres;
+
+-- DROP SCHEMA örneği (yorum satırı olarak)
+-- DROP SCHEMA IF EXISTS app CASCADE;
+
+-- ALTER SCHEMA örneği
+ALTER SCHEMA app OWNER TO postgres;
+
+-- CREATE EXTENSION örneği
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- DROP EXTENSION örneği (yorum satırı olarak)
+-- DROP EXTENSION IF EXISTS "uuid-ossp";
+-- DROP EXTENSION IF EXISTS "pgcrypto";
+
+-- CREATE USER örneği
+CREATE USER app_user WITH 
+    LOGIN
+    NOSUPERUSER
+    NOCREATEDB
+    NOCREATEROLE
+    INHERIT
+    NOREPLICATION
+    CONNECTION LIMIT -1
+    PASSWORD 'password';
+
+-- ALTER USER örneği
+ALTER USER app_user WITH PASSWORD 'new_password';
+
+-- DROP USER örneği (yorum satırı olarak)
+-- DROP USER IF EXISTS app_user;
+
+-- GRANT örnekleri
+GRANT CONNECT ON DATABASE ecommerce TO app_user;
+GRANT USAGE ON SCHEMA public TO app_user;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO app_user;
+GRANT INSERT, UPDATE ON products TO app_user;
+
+-- REVOKE örnekleri
+REVOKE INSERT, UPDATE ON products FROM app_user;
+
+-- CREATE ROLE örneği
+CREATE ROLE app_read_role;
+GRANT CONNECT ON DATABASE ecommerce TO app_read_role;
+GRANT USAGE ON SCHEMA public TO app_read_role;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO app_read_role;
+GRANT app_read_role TO app_user;
+
+-- DROP ROLE örneği (yorum satırı olarak)
+-- DROP ROLE IF EXISTS app_read_role;
+
+-- ALTER TABLE örnekleri
+ALTER TABLE users 
+    ADD COLUMN phone VARCHAR(20),
+    ADD COLUMN address TEXT;
+
+ALTER TABLE users
+    ADD CONSTRAINT users_phone_unique UNIQUE (phone);
+
+ALTER TABLE products 
+    ALTER COLUMN price SET NOT NULL,
+    ALTER COLUMN stock SET DEFAULT 100;
+
+ALTER TABLE products
+    ADD CONSTRAINT products_name_unique UNIQUE (name);
+
+-- DROP TABLE örnekleri (yorum satırı olarak)
+-- DROP TABLE IF EXISTS order_items CASCADE;
+-- DROP TABLE IF EXISTS orders CASCADE;
+-- DROP TABLE IF EXISTS products CASCADE;
+-- DROP TABLE IF EXISTS users CASCADE;
+
+-- TRUNCATE örneği (yorum satırı olarak)
+-- TRUNCATE TABLE order_items CASCADE;
+-- TRUNCATE TABLE orders CASCADE;
+-- TRUNCATE TABLE products CASCADE;
+-- TRUNCATE TABLE users CASCADE;
+
+-- CREATE INDEX örnekleri
+CREATE INDEX idx_users_username ON users(username);
+CREATE INDEX idx_products_price ON products(price);
+CREATE INDEX idx_orders_created ON orders(created_at);
+
+-- DROP INDEX örnekleri (yorum satırı olarak)
+-- DROP INDEX IF EXISTS idx_users_username;
+-- DROP INDEX IF EXISTS idx_products_price;
+-- DROP INDEX IF EXISTS idx_orders_created;
+
+-- ALTER INDEX örneği
+ALTER INDEX idx_users_email RENAME TO idx_users_email_new;
+
+-- CREATE VIEW örneği
+CREATE OR REPLACE VIEW view_order_summary AS
+    SELECT u.username, COUNT(o.id) as total_orders, SUM(o.total_amount) as total_spent
+    FROM users u
+    LEFT JOIN orders o ON u.id = o.user_id
+    GROUP BY u.username;
+
+-- DROP VIEW örneği (yorum satırı olarak)
+-- DROP VIEW IF EXISTS view_order_summary;
+
+-- CREATE MATERIALIZED VIEW örneği
+CREATE MATERIALIZED VIEW mv_order_summary AS
+    SELECT u.username, COUNT(o.id) as total_orders, SUM(o.total_amount) as total_spent
+    FROM users u
+    LEFT JOIN orders o ON u.id = o.user_id
+    GROUP BY u.username
+WITH DATA;
+
+-- DROP MATERIALIZED VIEW örneği (yorum satırı olarak)
+-- DROP MATERIALIZED VIEW IF EXISTS mv_order_summary;
+
+-- REFRESH MATERIALIZED VIEW örneği
+REFRESH MATERIALIZED VIEW mv_order_summary;
+
+-- CREATE TRIGGER örneği
+CREATE OR REPLACE FUNCTION update_product_price()
+    RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.price < 0 THEN
+        NEW.price := 0;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER before_product_update
+    BEFORE UPDATE ON products
+    FOR EACH ROW
+    EXECUTE FUNCTION update_product_price();
+
+-- DROP TRIGGER örneği (yorum satırı olarak)
+-- DROP TRIGGER IF EXISTS before_product_update ON products;
+-- DROP FUNCTION IF EXISTS update_product_price();
+
+-- CREATE FUNCTION örneği
+CREATE OR REPLACE FUNCTION get_user_orders(user_id INTEGER)
+    RETURNS TABLE (
+        order_id INTEGER,
+        order_date TIMESTAMP,
+        total_amount DECIMAL
+    ) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT id, created_at, total_amount
+    FROM orders
+    WHERE orders.user_id = get_user_orders.user_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- DROP FUNCTION örneği (yorum satırı olarak)
+-- DROP FUNCTION IF EXISTS get_user_orders(INTEGER);
+
+-- CREATE TYPE örneği
+CREATE TYPE order_status AS ENUM ('pending', 'processing', 'completed', 'cancelled');
+
+-- DROP TYPE örneği (yorum satırı olarak)
+-- DROP TYPE IF EXISTS order_status;
+
+-- CREATE DOMAIN örneği
+CREATE DOMAIN positive_price AS DECIMAL(12,2)
+    CHECK (VALUE >= 0);
+
+-- DROP DOMAIN örneği (yorum satırı olarak)
+-- DROP DOMAIN IF EXISTS positive_price;
+
+-- Sequence örnekleri
+CREATE SEQUENCE IF NOT EXISTS custom_seq
+    INCREMENT 1
+    START 1000
+    MINVALUE 1000
+    MAXVALUE 9999999999
+    CACHE 1;
+
+ALTER SEQUENCE custom_seq
+    INCREMENT 5
+    RESTART WITH 2000;
+
+-- DROP SEQUENCE örneği (yorum satırı olarak)
+-- DROP SEQUENCE IF EXISTS custom_seq;
