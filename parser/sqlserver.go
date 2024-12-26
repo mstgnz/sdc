@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/mstgnz/sdc"
+	"github.com/mstgnz/sqlporter"
 )
 
 // Precompiled regex patterns for better performance
@@ -42,14 +42,14 @@ func (p *SQLServerParser) SetSecurityOptions(options SecurityOptions) {
 }
 
 // Parse converts SQL Server dump to Entity structure with security validation
-func (p *SQLServerParser) Parse(sql string) (*sdc.Entity, error) {
+func (p *SQLServerParser) Parse(sql string) (*sqlporter.Entity, error) {
 	// Validate query safety
 	if err := validateQuerySafety(sql, p.securityOptions); err != nil {
 		return nil, fmt.Errorf("security validation failed: %v", err)
 	}
 
-	entity := &sdc.Entity{
-		Tables: make([]*sdc.Table, 0), // Pre-allocate slice
+	entity := &sqlporter.Entity{
+		Tables: make([]*sqlporter.Table, 0), // Pre-allocate slice
 	}
 
 	// Remove comments and normalize whitespace once
@@ -84,7 +84,7 @@ func (p *SQLServerParser) Parse(sql string) (*sdc.Entity, error) {
 }
 
 // ValidateSchema validates the schema structure with security checks
-func (p *SQLServerParser) ValidateSchema(table *sdc.Table, options SecurityOptions) error {
+func (p *SQLServerParser) ValidateSchema(table *sqlporter.Table, options SecurityOptions) error {
 	// Validate schema name
 	if table.Schema != "" {
 		if err := validateIdentifierSafety(table.Schema, options); err != nil {
@@ -156,7 +156,7 @@ func (p *SQLServerParser) ValidateSchema(table *sdc.Table, options SecurityOptio
 }
 
 // Convert transforms Entity structure to SQL Server format with security validation
-func (p *SQLServerParser) Convert(entity *sdc.Entity, options SecurityOptions) (string, error) {
+func (p *SQLServerParser) Convert(entity *sqlporter.Entity, options SecurityOptions) (string, error) {
 	// Validate entity before conversion
 	for _, table := range entity.Tables {
 		if err := p.ValidateSchema(table, options); err != nil {
@@ -329,18 +329,18 @@ func (p *SQLServerParser) Convert(entity *sdc.Entity, options SecurityOptions) (
 }
 
 // parseCreateTable parses CREATE TABLE statement with optimized string handling
-func (p *SQLServerParser) parseCreateTable(sql string) (*sdc.Table, error) {
+func (p *SQLServerParser) parseCreateTable(sql string) (*sqlporter.Table, error) {
 	matches := sqlServerCreateTableRegex.FindStringSubmatch(sql)
 	if len(matches) < 4 {
 		return nil, fmt.Errorf("invalid CREATE TABLE statement")
 	}
 
-	table := &sdc.Table{
+	table := &sqlporter.Table{
 		Schema:      strings.Trim(matches[1], "[]\""),
 		Name:        strings.Trim(matches[2], "[]\""),
 		FileGroup:   strings.Trim(matches[4], "[]\""),
-		Columns:     make([]*sdc.Column, 0),     // Pre-allocate slices
-		Constraints: make([]*sdc.Constraint, 0), // Pre-allocate slices
+		Columns:     make([]*sqlporter.Column, 0),     // Pre-allocate slices
+		Constraints: make([]*sqlporter.Constraint, 0), // Pre-allocate slices
 	}
 
 	// Parse column definitions efficiently
@@ -375,20 +375,20 @@ func (p *SQLServerParser) parseCreateTable(sql string) (*sdc.Table, error) {
 }
 
 // parseColumn parses column definition with optimized string handling
-func (p *SQLServerParser) parseColumn(columnDef string) *sdc.Column {
+func (p *SQLServerParser) parseColumn(columnDef string) *sqlporter.Column {
 	matches := sqlserverColumnRegex.FindStringSubmatch(columnDef)
 	if len(matches) < 3 {
 		return nil
 	}
 
-	column := &sdc.Column{
+	column := &sqlporter.Column{
 		Name:       strings.Trim(matches[1], "[]\""),
 		IsNullable: true, // Default to nullable
 		Nullable:   true,
 	}
 
 	// Parse data type
-	dataType := &sdc.DataType{
+	dataType := &sqlporter.DataType{
 		Name: matches[2],
 	}
 
@@ -451,8 +451,8 @@ func (p *SQLServerParser) parseColumn(columnDef string) *sdc.Column {
 }
 
 // parseConstraint parses constraint definition
-func (p *SQLServerParser) parseConstraint(constraintDef string) *sdc.Constraint {
-	constraint := &sdc.Constraint{}
+func (p *SQLServerParser) parseConstraint(constraintDef string) *sqlporter.Constraint {
+	constraint := &sqlporter.Constraint{}
 
 	// Split constraint definition into parts
 	parts := strings.Fields(constraintDef)
@@ -572,7 +572,7 @@ func (p *SQLServerParser) parseConstraint(constraintDef string) *sdc.Constraint 
 }
 
 // convertDataType converts data type to SQL Server format
-func (p *SQLServerParser) convertDataType(dataType *sdc.DataType) string {
+func (p *SQLServerParser) convertDataType(dataType *sqlporter.DataType) string {
 	if dataType == nil {
 		return "varchar(max)"
 	}
@@ -630,7 +630,7 @@ func (p *SQLServerParser) convertDataType(dataType *sdc.DataType) string {
 }
 
 // parseAlterTable parses ALTER TABLE statement
-func (p *SQLServerParser) parseAlterTable(sql string) (*sdc.AlterTable, error) {
+func (p *SQLServerParser) parseAlterTable(sql string) (*sqlporter.AlterTable, error) {
 	// Remove comments and normalize whitespace
 	sql = removeComments(sql)
 	sql = strings.TrimSpace(sql)
@@ -652,7 +652,7 @@ func (p *SQLServerParser) parseAlterTable(sql string) (*sdc.AlterTable, error) {
 		schema = "dbo" // Default schema for SQL Server
 	}
 
-	alterTable := &sdc.AlterTable{
+	alterTable := &sqlporter.AlterTable{
 		Schema: strings.Trim(schema, "[]\""),
 		Table:  strings.Trim(matches[2], "[]\""),
 	}
@@ -674,14 +674,14 @@ func (p *SQLServerParser) parseAlterTable(sql string) (*sdc.AlterTable, error) {
 	} else if strings.HasPrefix(action, "DROP CONSTRAINT") {
 		alterTable.Action = "DROP CONSTRAINT"
 		constraintName := strings.Trim(matches[3][len("DROP CONSTRAINT"):], " []\"")
-		alterTable.Constraint = &sdc.Constraint{Name: constraintName}
+		alterTable.Constraint = &sqlporter.Constraint{Name: constraintName}
 	} else if strings.HasPrefix(action, "DROP COLUMN") || strings.HasPrefix(action, "DROP") {
 		alterTable.Action = "DROP COLUMN"
 		columnName := strings.Trim(matches[3][len("DROP COLUMN"):], " []\"")
 		if strings.HasPrefix(columnName, "COLUMN ") {
 			columnName = strings.Trim(columnName[len("COLUMN"):], " []\"")
 		}
-		alterTable.Column = &sdc.Column{Name: columnName}
+		alterTable.Column = &sqlporter.Column{Name: columnName}
 	} else if strings.HasPrefix(action, "ALTER COLUMN") {
 		alterTable.Action = "ALTER COLUMN"
 		column := p.parseColumn(matches[3][len("ALTER COLUMN"):])
@@ -694,7 +694,7 @@ func (p *SQLServerParser) parseAlterTable(sql string) (*sdc.AlterTable, error) {
 }
 
 // parseDropTable parses DROP TABLE statement
-func (p *SQLServerParser) parseDropTable(sql string) (*sdc.DropTable, error) {
+func (p *SQLServerParser) parseDropTable(sql string) (*sqlporter.DropTable, error) {
 	// Remove comments and normalize whitespace
 	sql = removeComments(sql)
 	sql = strings.TrimSpace(sql)
@@ -719,7 +719,7 @@ func (p *SQLServerParser) parseDropTable(sql string) (*sdc.DropTable, error) {
 		schema = "dbo" // Default schema for SQL Server
 	}
 
-	return &sdc.DropTable{
+	return &sqlporter.DropTable{
 		Schema:   strings.Trim(schema, "[]\""),
 		Table:    strings.Trim(matches[2], "[]\""),
 		IfExists: ifExists,
@@ -728,7 +728,7 @@ func (p *SQLServerParser) parseDropTable(sql string) (*sdc.DropTable, error) {
 }
 
 // parseCreateIndex parses CREATE INDEX statement
-func (p *SQLServerParser) parseCreateIndex(sql string) (*sdc.Index, error) {
+func (p *SQLServerParser) parseCreateIndex(sql string) (*sqlporter.Index, error) {
 	// Remove comments and normalize whitespace
 	sql = removeComments(sql)
 	sql = strings.TrimSpace(sql)
@@ -789,7 +789,7 @@ func (p *SQLServerParser) parseCreateIndex(sql string) (*sdc.Index, error) {
 		}
 	}
 
-	return &sdc.Index{
+	return &sqlporter.Index{
 		Name:           strings.Trim(matches[1], "[]\""),
 		Schema:         strings.Trim(schema, "[]\""),
 		Table:          strings.Trim(matches[3], "[]\""),
@@ -805,7 +805,7 @@ func (p *SQLServerParser) parseCreateIndex(sql string) (*sdc.Index, error) {
 }
 
 // parseDropIndex parses DROP INDEX statement
-func (p *SQLServerParser) parseDropIndex(sql string) (*sdc.DropIndex, error) {
+func (p *SQLServerParser) parseDropIndex(sql string) (*sqlporter.DropIndex, error) {
 	// Remove comments and normalize whitespace
 	sql = removeComments(sql)
 	sql = strings.TrimSpace(sql)
@@ -830,7 +830,7 @@ func (p *SQLServerParser) parseDropIndex(sql string) (*sdc.DropIndex, error) {
 		schema = "dbo" // Default schema for SQL Server
 	}
 
-	return &sdc.DropIndex{
+	return &sqlporter.DropIndex{
 		Schema:   strings.Trim(schema, "[]\""),
 		Table:    strings.Trim(matches[3], "[]\""),
 		Index:    strings.Trim(matches[1], "[]\""),

@@ -1,4 +1,4 @@
-package sdc
+package sqlporter
 
 // Entity represents the database structure.
 // It contains all tables and their relationships in the database.

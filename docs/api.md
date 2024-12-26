@@ -196,7 +196,7 @@ var (
 package main
 
 import (
-    "github.com/mstgnz/sdc"
+    "github.com/mstgnz/sqlporter"
     "log"
 )
 
@@ -207,7 +207,7 @@ func main() {
     );`
 
     // Convert from MySQL to PostgreSQL
-    pgSQL, err := sdc.Convert(mysqlSQL, "mysql", "postgres")
+    pgSQL, err := sqlporter.Convert(mysqlSQL, "mysql", "postgres")
     if err != nil {
         log.Fatal(err)
     }
@@ -223,7 +223,7 @@ package main
 
 import (
     "context"
-    "github.com/mstgnz/sdc/migration"
+    "github.com/mstgnz/sqlporter/migration"
     "log"
 )
 
@@ -236,4 +236,4 @@ func main() {
     if err != nil {
         log.Fatal(err)
     }
-} 
+}

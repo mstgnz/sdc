@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/mstgnz/sdc"
+	"github.com/mstgnz/sqlporter"
 )
 
 // Precompiled regex patterns for better performance
@@ -34,9 +34,9 @@ func NewSQLiteParser() *SQLiteParser {
 }
 
 // Parse converts SQLite dump to Entity structure
-func (p *SQLiteParser) Parse(sql string) (*sdc.Entity, error) {
-	entity := &sdc.Entity{
-		Tables: make([]*sdc.Table, 0), // Pre-allocate slice
+func (p *SQLiteParser) Parse(sql string) (*sqlporter.Entity, error) {
+	entity := &sqlporter.Entity{
+		Tables: make([]*sqlporter.Table, 0), // Pre-allocate slice
 	}
 
 	// Remove comments and normalize whitespace once
@@ -65,17 +65,17 @@ func (p *SQLiteParser) Parse(sql string) (*sdc.Entity, error) {
 }
 
 // parseCreateTable parses CREATE TABLE statement with optimized string handling
-func (p *SQLiteParser) parseCreateTable(sql string) (*sdc.Table, error) {
+func (p *SQLiteParser) parseCreateTable(sql string) (*sqlporter.Table, error) {
 	matches := createTableRegex.FindStringSubmatch(sql)
 	if len(matches) < 4 {
 		return nil, fmt.Errorf("invalid CREATE TABLE statement")
 	}
 
-	table := &sdc.Table{
+	table := &sqlporter.Table{
 		Schema:      strings.Trim(matches[1], "[]\""),
 		Name:        strings.Trim(matches[2], "[]\""),
-		Columns:     make([]*sdc.Column, 0),     // Pre-allocate slices
-		Constraints: make([]*sdc.Constraint, 0), // Pre-allocate slices
+		Columns:     make([]*sqlporter.Column, 0),     // Pre-allocate slices
+		Constraints: make([]*sqlporter.Constraint, 0), // Pre-allocate slices
 	}
 
 	// Parse column definitions efficiently
@@ -158,20 +158,20 @@ func splitWithParentheses(s string) []string {
 }
 
 // parseColumn parses column definition with optimized string handling
-func (p *SQLiteParser) parseColumn(columnDef string) *sdc.Column {
+func (p *SQLiteParser) parseColumn(columnDef string) *sqlporter.Column {
 	matches := sqliteColumnRegex.FindStringSubmatch(columnDef)
 	if len(matches) < 3 {
 		return nil
 	}
 
-	column := &sdc.Column{
+	column := &sqlporter.Column{
 		Name:       strings.Trim(matches[1], "\""),
 		IsNullable: true, // Default to nullable
 		Nullable:   true,
 	}
 
 	// Parse data type
-	dataType := &sdc.DataType{
+	dataType := &sqlporter.DataType{
 		Name: matches[2],
 	}
 
@@ -278,7 +278,7 @@ func removeComments(sql string) string {
 }
 
 // Convert transforms Entity structure to SQLite format with optimized string handling
-func (p *SQLiteParser) Convert(entity *sdc.Entity) (string, error) {
+func (p *SQLiteParser) Convert(entity *sqlporter.Entity) (string, error) {
 	// Reset and reuse string builder
 	p.builderPool.Reset()
 	result := &p.builderPool
@@ -328,7 +328,7 @@ func (p *SQLiteParser) Convert(entity *sdc.Entity) (string, error) {
 }
 
 // convertDataType converts data type to SQLite format
-func (p *SQLiteParser) convertDataType(dataType *sdc.DataType) string {
+func (p *SQLiteParser) convertDataType(dataType *sqlporter.DataType) string {
 	if dataType == nil {
 		return "TEXT"
 	}
@@ -385,8 +385,8 @@ func (p *SQLiteParser) GetReservedWords() []string {
 }
 
 // ConvertDataTypeFrom converts source database data type to SQLite data type
-func (p *SQLiteParser) ConvertDataTypeFrom(sourceType string, length int, precision int, scale int) *sdc.DataType {
-	return &sdc.DataType{
+func (p *SQLiteParser) ConvertDataTypeFrom(sourceType string, length int, precision int, scale int) *sqlporter.DataType {
+	return &sqlporter.DataType{
 		Name:      sourceType,
 		Length:    length,
 		Precision: precision,
@@ -395,7 +395,7 @@ func (p *SQLiteParser) ConvertDataTypeFrom(sourceType string, length int, precis
 }
 
 // ParseCreateTable parses CREATE TABLE statement
-func (p *SQLiteParser) ParseCreateTable(sql string) (*sdc.Table, error) {
+func (p *SQLiteParser) ParseCreateTable(sql string) (*sqlporter.Table, error) {
 	// Remove comments and extra whitespace
 	sql = removeComments(sql)
 	sql = strings.TrimSpace(sql)
@@ -412,7 +412,7 @@ func (p *SQLiteParser) ParseCreateTable(sql string) (*sdc.Table, error) {
 		return nil, fmt.Errorf("could not parse CREATE TABLE statement")
 	}
 
-	table := &sdc.Table{
+	table := &sqlporter.Table{
 		Name: strings.Trim(matches[1], "[]"),
 	}
 
@@ -448,7 +448,7 @@ func (p *SQLiteParser) ParseCreateTable(sql string) (*sdc.Table, error) {
 }
 
 // ParseAlterTable parses ALTER TABLE statement
-func (p *SQLiteParser) ParseAlterTable(sql string) (*sdc.Table, error) {
+func (p *SQLiteParser) ParseAlterTable(sql string) (*sqlporter.Table, error) {
 	// Remove comments and extra whitespace
 	sql = removeComments(sql)
 	sql = strings.TrimSpace(sql)
@@ -465,7 +465,7 @@ func (p *SQLiteParser) ParseAlterTable(sql string) (*sdc.Table, error) {
 		return nil, fmt.Errorf("could not parse ALTER TABLE statement")
 	}
 
-	table := &sdc.Table{
+	table := &sqlporter.Table{
 		Schema: matches[1],
 		Name:   matches[2],
 	}
@@ -498,7 +498,7 @@ func (p *SQLiteParser) ParseAlterTable(sql string) (*sdc.Table, error) {
 }
 
 // ParseDropTable parses DROP TABLE statement
-func (p *SQLiteParser) ParseDropTable(sql string) (*sdc.Table, error) {
+func (p *SQLiteParser) ParseDropTable(sql string) (*sqlporter.Table, error) {
 	// Remove comments and extra whitespace
 	sql = removeComments(sql)
 	sql = strings.TrimSpace(sql)
@@ -515,7 +515,7 @@ func (p *SQLiteParser) ParseDropTable(sql string) (*sdc.Table, error) {
 		return nil, fmt.Errorf("could not parse DROP TABLE statement")
 	}
 
-	table := &sdc.Table{
+	table := &sqlporter.Table{
 		Schema: matches[1],
 		Name:   matches[2],
 	}
@@ -524,7 +524,7 @@ func (p *SQLiteParser) ParseDropTable(sql string) (*sdc.Table, error) {
 }
 
 // ParseCreateIndex parses CREATE INDEX statement
-func (p *SQLiteParser) ParseCreateIndex(sql string) (*sdc.Index, error) {
+func (p *SQLiteParser) ParseCreateIndex(sql string) (*sqlporter.Index, error) {
 	// Remove comments and extra whitespace
 	sql = removeComments(sql)
 	sql = strings.TrimSpace(sql)
@@ -534,7 +534,7 @@ func (p *SQLiteParser) ParseCreateIndex(sql string) (*sdc.Index, error) {
 		return nil, fmt.Errorf("invalid CREATE INDEX statement")
 	}
 
-	index := &sdc.Index{}
+	index := &sqlporter.Index{}
 
 	// Parse index name and table
 	var indexRegex *regexp.Regexp
@@ -563,7 +563,7 @@ func (p *SQLiteParser) ParseCreateIndex(sql string) (*sdc.Index, error) {
 }
 
 // ParseDropIndex parses DROP INDEX statement
-func (p *SQLiteParser) ParseDropIndex(sql string) (*sdc.Index, error) {
+func (p *SQLiteParser) ParseDropIndex(sql string) (*sqlporter.Index, error) {
 	// Remove comments and extra whitespace
 	sql = removeComments(sql)
 	sql = strings.TrimSpace(sql)
@@ -573,7 +573,7 @@ func (p *SQLiteParser) ParseDropIndex(sql string) (*sdc.Index, error) {
 		return nil, fmt.Errorf("invalid DROP INDEX statement")
 	}
 
-	index := &sdc.Index{}
+	index := &sqlporter.Index{}
 
 	// Extract index name
 	dropRegex := regexp.MustCompile(`DROP\s+INDEX\s+(?:IF\s+EXISTS\s+)?([^\s;]+)`)
@@ -617,8 +617,8 @@ func (p *SQLiteParser) EscapeString(value string) string {
 }
 
 // ParseSQL parses SQLite SQL statements and returns an Entity
-func (p *SQLiteParser) ParseSQL(sql string) (*sdc.Entity, error) {
-	entity := &sdc.Entity{}
+func (p *SQLiteParser) ParseSQL(sql string) (*sqlporter.Entity, error) {
+	entity := &sqlporter.Entity{}
 
 	// Find CREATE TABLE statements
 	createTableRegex := regexp.MustCompile(`(?i)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s(]+)\s*\((.*?)\)`)
@@ -636,8 +636,8 @@ func (p *SQLiteParser) ParseSQL(sql string) (*sdc.Entity, error) {
 }
 
 // parseConstraint parses constraint definition
-func (p *SQLiteParser) parseConstraint(constraintDef string) *sdc.Constraint {
-	constraint := &sdc.Constraint{}
+func (p *SQLiteParser) parseConstraint(constraintDef string) *sqlporter.Constraint {
+	constraint := &sqlporter.Constraint{}
 
 	// Split constraint definition into parts
 	parts := strings.Fields(constraintDef)

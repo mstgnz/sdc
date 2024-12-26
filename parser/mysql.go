@@ -6,15 +6,15 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mstgnz/sdc"
+	"github.com/mstgnz/sqlporter"
 )
 
 // MySQLParser implements the parser for MySQL database
 type MySQLParser struct{}
 
 // Parse converts MySQL dump to Entity structure
-func (p *MySQLParser) Parse(sql string) (*sdc.Entity, error) {
-	entity := &sdc.Entity{}
+func (p *MySQLParser) Parse(sql string) (*sqlporter.Entity, error) {
+	entity := &sqlporter.Entity{}
 
 	// Split SQL statements
 	statements := strings.Split(sql, ";")
@@ -39,8 +39,8 @@ func (p *MySQLParser) Parse(sql string) (*sdc.Entity, error) {
 }
 
 // parseCreateTable parses CREATE TABLE statement
-func (p *MySQLParser) parseCreateTable(sql string) (*sdc.Table, error) {
-	table := &sdc.Table{}
+func (p *MySQLParser) parseCreateTable(sql string) (*sqlporter.Table, error) {
+	table := &sqlporter.Table{}
 
 	// Extract basic table information
 	tableRegex := regexp.MustCompile(`(?i)CREATE\s+(?:TEMPORARY\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s(]+)\s*\((.*?)\)(?:\s+ENGINE\s*=\s*(\w+))?(?:\s+DEFAULT\s+CHARSET\s*=\s*(\w+))?(?:\s+COLLATE\s*=\s*(\w+))?`)
@@ -116,8 +116,8 @@ func (p *MySQLParser) parseCreateTable(sql string) (*sdc.Table, error) {
 }
 
 // parseColumn parses column definition
-func (p *MySQLParser) parseColumn(columnDef string) *sdc.Column {
-	column := &sdc.Column{}
+func (p *MySQLParser) parseColumn(columnDef string) *sqlporter.Column {
+	column := &sqlporter.Column{}
 
 	// Split column name and data type
 	parts := strings.Fields(columnDef)
@@ -132,7 +132,7 @@ func (p *MySQLParser) parseColumn(columnDef string) *sdc.Column {
 	dataTypeMatches := dataTypeRegex.FindStringSubmatch(parts[1])
 
 	if len(dataTypeMatches) > 1 {
-		dataType := &sdc.DataType{
+		dataType := &sqlporter.DataType{
 			Name: strings.ToUpper(dataTypeMatches[1]),
 		}
 
@@ -194,7 +194,7 @@ func (p *MySQLParser) parseColumn(columnDef string) *sdc.Column {
 }
 
 // Convert transforms Entity structure to MySQL format
-func (p *MySQLParser) Convert(entity *sdc.Entity) (string, error) {
+func (p *MySQLParser) Convert(entity *sqlporter.Entity) (string, error) {
 	var result strings.Builder
 
 	for _, table := range entity.Tables {
@@ -248,7 +248,7 @@ func (p *MySQLParser) Convert(entity *sdc.Entity) (string, error) {
 }
 
 // convertDataType converts data type to MySQL format
-func (p *MySQLParser) convertDataType(dataType *sdc.DataType) string {
+func (p *MySQLParser) convertDataType(dataType *sqlporter.DataType) string {
 	if dataType == nil {
 		return "VARCHAR(255)"
 	}
@@ -366,8 +366,8 @@ func (p *MySQLParser) GetReservedWords() []string {
 }
 
 // ConvertDataTypeFrom converts source database data type to MySQL data type
-func (p *MySQLParser) ConvertDataTypeFrom(sourceType string, length int, precision int, scale int) *sdc.DataType {
-	return &sdc.DataType{
+func (p *MySQLParser) ConvertDataTypeFrom(sourceType string, length int, precision int, scale int) *sqlporter.DataType {
+	return &sqlporter.DataType{
 		Name:      sourceType,
 		Length:    length,
 		Precision: precision,
@@ -376,30 +376,30 @@ func (p *MySQLParser) ConvertDataTypeFrom(sourceType string, length int, precisi
 }
 
 // ParseCreateTable parses CREATE TABLE statement
-func (p *MySQLParser) ParseCreateTable(sql string) (*sdc.Table, error) {
+func (p *MySQLParser) ParseCreateTable(sql string) (*sqlporter.Table, error) {
 	return p.parseCreateTable(sql)
 }
 
 // ParseAlterTable parses ALTER TABLE statement
-func (p *MySQLParser) ParseAlterTable(sql string) (*sdc.AlterTable, error) {
+func (p *MySQLParser) ParseAlterTable(sql string) (*sqlporter.AlterTable, error) {
 	// Parse logic to be implemented
 	return nil, nil
 }
 
 // ParseDropTable parses DROP TABLE statement
-func (p *MySQLParser) ParseDropTable(sql string) (*sdc.DropTable, error) {
+func (p *MySQLParser) ParseDropTable(sql string) (*sqlporter.DropTable, error) {
 	// Parse logic to be implemented
 	return nil, nil
 }
 
 // ParseCreateIndex parses CREATE INDEX statement
-func (p *MySQLParser) ParseCreateIndex(sql string) (*sdc.Index, error) {
+func (p *MySQLParser) ParseCreateIndex(sql string) (*sqlporter.Index, error) {
 	// Parse logic to be implemented
 	return nil, nil
 }
 
 // ParseDropIndex parses DROP INDEX statement
-func (p *MySQLParser) ParseDropIndex(sql string) (*sdc.DropIndex, error) {
+func (p *MySQLParser) ParseDropIndex(sql string) (*sqlporter.DropIndex, error) {
 	// Parse logic to be implemented
 	return nil, nil
 }

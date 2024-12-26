@@ -3,7 +3,7 @@ package parser
 import (
 	"testing"
 
-	"github.com/mstgnz/sdc"
+	"github.com/mstgnz/sqlporter"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -11,7 +11,7 @@ func TestPostgresParser_ParseCreateTable(t *testing.T) {
 	tests := []struct {
 		name     string
 		sql      string
-		expected *sdc.Table
+		expected *sqlporter.Table
 		wantErr  bool
 	}{
 		{
@@ -25,61 +25,61 @@ func TestPostgresParser_ParseCreateTable(t *testing.T) {
 				age INTEGER CHECK (age >= 18),
 				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 				updated_at TIMESTAMP,
-				CONSTRAINT users_email_check CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$')
+				CONSTRAINT users_email_check CHECK (email ~* '^[A-Za-z0-9\\._%+-]+@[A-Za-z0-9\\.-]+\\.[A-Za-z]{2,}$')
 			) TABLESPACE users_space;`,
-			expected: &sdc.Table{
+			expected: &sqlporter.Table{
 				Name:   "users",
 				Schema: "public",
-				Columns: []*sdc.Column{
+				Columns: []*sqlporter.Column{
 					{
 						Name:          "id",
-						DataType:      &sdc.DataType{Name: "SERIAL"},
+						DataType:      &sqlporter.DataType{Name: "SERIAL"},
 						PrimaryKey:    true,
 						AutoIncrement: true,
 					},
 					{
 						Name:     "username",
-						DataType: &sdc.DataType{Name: "VARCHAR", Length: 50},
+						DataType: &sqlporter.DataType{Name: "VARCHAR", Length: 50},
 						Nullable: false,
 						Unique:   true,
 					},
 					{
 						Name:     "email",
-						DataType: &sdc.DataType{Name: "VARCHAR", Length: 100},
+						DataType: &sqlporter.DataType{Name: "VARCHAR", Length: 100},
 						Nullable: false,
 						Unique:   true,
 					},
 					{
 						Name:     "password",
-						DataType: &sdc.DataType{Name: "VARCHAR", Length: 100},
+						DataType: &sqlporter.DataType{Name: "VARCHAR", Length: 100},
 						Nullable: false,
 					},
 					{
 						Name:     "full_name",
-						DataType: &sdc.DataType{Name: "VARCHAR", Length: 100},
+						DataType: &sqlporter.DataType{Name: "VARCHAR", Length: 100},
 						Nullable: true,
 					},
 					{
 						Name:     "age",
-						DataType: &sdc.DataType{Name: "INTEGER"},
+						DataType: &sqlporter.DataType{Name: "INTEGER"},
 						Check:    "age >= 18",
 					},
 					{
 						Name:     "created_at",
-						DataType: &sdc.DataType{Name: "TIMESTAMP"},
+						DataType: &sqlporter.DataType{Name: "TIMESTAMP"},
 						Default:  "CURRENT_TIMESTAMP",
 					},
 					{
 						Name:     "updated_at",
-						DataType: &sdc.DataType{Name: "TIMESTAMP"},
+						DataType: &sqlporter.DataType{Name: "TIMESTAMP"},
 						Nullable: true,
 					},
 				},
-				Constraints: []*sdc.Constraint{
+				Constraints: []*sqlporter.Constraint{
 					{
 						Name:  "users_email_check",
 						Type:  "CHECK",
-						Check: "email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$'",
+						Check: "email ~* '^[A-Za-z0-9\\._%+-]+@[A-Za-z0-9\\.-]+\\.[A-Za-z]{2,}$'",
 					},
 				},
 				FileGroup: "users_space",
@@ -97,21 +97,21 @@ func TestPostgresParser_ParseCreateTable(t *testing.T) {
 				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 				FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT
 			);`,
-			expected: &sdc.Table{
+			expected: &sqlporter.Table{
 				Name:   "orders",
 				Schema: "public",
-				Columns: []*sdc.Column{
+				Columns: []*sqlporter.Column{
 					{
 						Name:          "id",
-						DataType:      &sdc.DataType{Name: "SERIAL"},
+						DataType:      &sqlporter.DataType{Name: "SERIAL"},
 						PrimaryKey:    true,
 						AutoIncrement: true,
 					},
 					{
 						Name:     "user_id",
-						DataType: &sdc.DataType{Name: "INTEGER"},
+						DataType: &sqlporter.DataType{Name: "INTEGER"},
 						Nullable: false,
-						ForeignKey: &sdc.ForeignKey{
+						ForeignKey: &sqlporter.ForeignKey{
 							RefTable:  "users",
 							RefColumn: "id",
 							OnDelete:  "CASCADE",
@@ -119,28 +119,28 @@ func TestPostgresParser_ParseCreateTable(t *testing.T) {
 					},
 					{
 						Name:     "product_id",
-						DataType: &sdc.DataType{Name: "INTEGER"},
+						DataType: &sqlporter.DataType{Name: "INTEGER"},
 						Nullable: false,
 					},
 					{
 						Name:     "quantity",
-						DataType: &sdc.DataType{Name: "INTEGER"},
+						DataType: &sqlporter.DataType{Name: "INTEGER"},
 						Nullable: false,
 						Default:  "1",
 					},
 					{
 						Name:     "status",
-						DataType: &sdc.DataType{Name: "VARCHAR", Length: 20},
+						DataType: &sqlporter.DataType{Name: "VARCHAR", Length: 20},
 						Nullable: false,
 						Default:  "'pending'",
 					},
 					{
 						Name:     "created_at",
-						DataType: &sdc.DataType{Name: "TIMESTAMP"},
+						DataType: &sqlporter.DataType{Name: "TIMESTAMP"},
 						Default:  "CURRENT_TIMESTAMP",
 					},
 				},
-				Constraints: []*sdc.Constraint{
+				Constraints: []*sqlporter.Constraint{
 					{
 						Type:       "FOREIGN KEY",
 						Columns:    []string{"product_id"},
@@ -173,20 +173,20 @@ func TestPostgresParser_ParseAlterTable(t *testing.T) {
 	tests := []struct {
 		name     string
 		sql      string
-		expected *sdc.AlterTable
+		expected *sqlporter.AlterTable
 		wantErr  bool
 	}{
 		{
 			name: "Add column",
 			sql: `ALTER TABLE public.users 
 				ADD COLUMN middle_name VARCHAR(50);`,
-			expected: &sdc.AlterTable{
+			expected: &sqlporter.AlterTable{
 				Schema: "public",
 				Table:  "users",
 				Action: "ADD COLUMN",
-				Column: &sdc.Column{
+				Column: &sqlporter.Column{
 					Name:     "middle_name",
-					DataType: &sdc.DataType{Name: "VARCHAR", Length: 50},
+					DataType: &sqlporter.DataType{Name: "VARCHAR", Length: 50},
 				},
 			},
 			wantErr: false,
@@ -195,11 +195,11 @@ func TestPostgresParser_ParseAlterTable(t *testing.T) {
 			name: "Drop column",
 			sql: `ALTER TABLE public.users 
 				DROP COLUMN middle_name;`,
-			expected: &sdc.AlterTable{
+			expected: &sqlporter.AlterTable{
 				Schema: "public",
 				Table:  "users",
 				Action: "DROP COLUMN",
-				Column: &sdc.Column{
+				Column: &sqlporter.Column{
 					Name: "middle_name",
 				},
 			},
@@ -209,11 +209,11 @@ func TestPostgresParser_ParseAlterTable(t *testing.T) {
 			name: "Add constraint",
 			sql: `ALTER TABLE public.users 
 				ADD CONSTRAINT users_age_check CHECK (age >= 21);`,
-			expected: &sdc.AlterTable{
+			expected: &sqlporter.AlterTable{
 				Schema: "public",
 				Table:  "users",
 				Action: "ADD CONSTRAINT",
-				Constraint: &sdc.Constraint{
+				Constraint: &sqlporter.Constraint{
 					Name:  "users_age_check",
 					Type:  "CHECK",
 					Check: "age >= 21",
@@ -242,13 +242,13 @@ func TestPostgresParser_ParseDropTable(t *testing.T) {
 	tests := []struct {
 		name     string
 		sql      string
-		expected *sdc.DropTable
+		expected *sqlporter.DropTable
 		wantErr  bool
 	}{
 		{
 			name: "Drop table",
 			sql:  "DROP TABLE public.users;",
-			expected: &sdc.DropTable{
+			expected: &sqlporter.DropTable{
 				Schema: "public",
 				Table:  "users",
 			},
@@ -257,7 +257,7 @@ func TestPostgresParser_ParseDropTable(t *testing.T) {
 		{
 			name: "Drop table if exists",
 			sql:  "DROP TABLE IF EXISTS public.users;",
-			expected: &sdc.DropTable{
+			expected: &sqlporter.DropTable{
 				Schema:   "public",
 				Table:    "users",
 				IfExists: true,
@@ -267,7 +267,7 @@ func TestPostgresParser_ParseDropTable(t *testing.T) {
 		{
 			name: "Drop table cascade",
 			sql:  "DROP TABLE public.users CASCADE;",
-			expected: &sdc.DropTable{
+			expected: &sqlporter.DropTable{
 				Schema:  "public",
 				Table:   "users",
 				Cascade: true,
@@ -295,13 +295,13 @@ func TestPostgresParser_ParseCreateIndex(t *testing.T) {
 	tests := []struct {
 		name     string
 		sql      string
-		expected *sdc.Index
+		expected *sqlporter.Index
 		wantErr  bool
 	}{
 		{
 			name: "Create index",
 			sql:  "CREATE INDEX idx_users_email ON public.users(email);",
-			expected: &sdc.Index{
+			expected: &sqlporter.Index{
 				Name:    "idx_users_email",
 				Schema:  "public",
 				Table:   "users",
@@ -312,7 +312,7 @@ func TestPostgresParser_ParseCreateIndex(t *testing.T) {
 		{
 			name: "Create unique index",
 			sql:  "CREATE UNIQUE INDEX idx_users_username ON public.users(username);",
-			expected: &sdc.Index{
+			expected: &sqlporter.Index{
 				Name:    "idx_users_username",
 				Schema:  "public",
 				Table:   "users",
@@ -324,7 +324,7 @@ func TestPostgresParser_ParseCreateIndex(t *testing.T) {
 		{
 			name: "Create index with include",
 			sql:  "CREATE INDEX idx_users_name ON public.users(first_name, last_name) INCLUDE (email);",
-			expected: &sdc.Index{
+			expected: &sqlporter.Index{
 				Name:           "idx_users_name",
 				Schema:         "public",
 				Table:          "users",
@@ -354,13 +354,13 @@ func TestPostgresParser_ParseDropIndex(t *testing.T) {
 	tests := []struct {
 		name     string
 		sql      string
-		expected *sdc.DropIndex
+		expected *sqlporter.DropIndex
 		wantErr  bool
 	}{
 		{
 			name: "Drop index",
 			sql:  "DROP INDEX public.idx_users_email;",
-			expected: &sdc.DropIndex{
+			expected: &sqlporter.DropIndex{
 				Schema: "public",
 				Index:  "idx_users_email",
 			},
@@ -369,7 +369,7 @@ func TestPostgresParser_ParseDropIndex(t *testing.T) {
 		{
 			name: "Drop index if exists",
 			sql:  "DROP INDEX IF EXISTS public.idx_users_email;",
-			expected: &sdc.DropIndex{
+			expected: &sqlporter.DropIndex{
 				Schema:   "public",
 				Index:    "idx_users_email",
 				IfExists: true,
@@ -379,7 +379,7 @@ func TestPostgresParser_ParseDropIndex(t *testing.T) {
 		{
 			name: "Drop index cascade",
 			sql:  "DROP INDEX public.idx_users_email CASCADE;",
-			expected: &sdc.DropIndex{
+			expected: &sqlporter.DropIndex{
 				Schema:  "public",
 				Index:   "idx_users_email",
 				Cascade: true,

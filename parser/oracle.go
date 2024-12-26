@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mstgnz/sdc"
+	"github.com/mstgnz/sqlporter"
 )
 
 // parseNumber safely parses a string to an integer
@@ -28,8 +28,8 @@ var (
 type OracleParser struct{}
 
 // Parse converts Oracle dump to Entity structure
-func (p *OracleParser) Parse(sql string) (*sdc.Entity, error) {
-	entity := &sdc.Entity{}
+func (p *OracleParser) Parse(sql string) (*sqlporter.Entity, error) {
+	entity := &sqlporter.Entity{}
 
 	// Split SQL statements
 	statements := strings.Split(sql, ";")
@@ -54,7 +54,7 @@ func (p *OracleParser) Parse(sql string) (*sdc.Entity, error) {
 }
 
 // Convert transforms Entity structure to Oracle format
-func (p *OracleParser) Convert(entity *sdc.Entity) (string, error) {
+func (p *OracleParser) Convert(entity *sqlporter.Entity) (string, error) {
 	var result strings.Builder
 
 	for _, table := range entity.Tables {
@@ -85,7 +85,7 @@ func (p *OracleParser) Convert(entity *sdc.Entity) (string, error) {
 }
 
 // convertDataType converts data type to Oracle format
-func (p *OracleParser) convertDataType(dataType *sdc.DataType) string {
+func (p *OracleParser) convertDataType(dataType *sqlporter.DataType) string {
 	if dataType == nil {
 		return "VARCHAR2(4000)"
 	}
@@ -188,8 +188,8 @@ func (p *OracleParser) GetReservedWords() []string {
 }
 
 // ConvertDataTypeFrom converts source database data type to Oracle data type
-func (p *OracleParser) ConvertDataTypeFrom(sourceType string, length int, precision int, scale int) *sdc.DataType {
-	return &sdc.DataType{
+func (p *OracleParser) ConvertDataTypeFrom(sourceType string, length int, precision int, scale int) *sqlporter.DataType {
+	return &sqlporter.DataType{
 		Name:      sourceType,
 		Length:    length,
 		Precision: precision,
@@ -198,30 +198,30 @@ func (p *OracleParser) ConvertDataTypeFrom(sourceType string, length int, precis
 }
 
 // ParseCreateTable parses CREATE TABLE statement
-func (p *OracleParser) ParseCreateTable(sql string) (*sdc.Table, error) {
+func (p *OracleParser) ParseCreateTable(sql string) (*sqlporter.Table, error) {
 	return p.parseCreateTable(sql)
 }
 
 // ParseAlterTable parses ALTER TABLE statement
-func (p *OracleParser) ParseAlterTable(sql string) (*sdc.AlterTable, error) {
+func (p *OracleParser) ParseAlterTable(sql string) (*sqlporter.AlterTable, error) {
 	// Parse logic to be implemented
 	return nil, nil
 }
 
 // ParseDropTable parses DROP TABLE statement
-func (p *OracleParser) ParseDropTable(sql string) (*sdc.DropTable, error) {
+func (p *OracleParser) ParseDropTable(sql string) (*sqlporter.DropTable, error) {
 	// Parse logic to be implemented
 	return nil, nil
 }
 
 // ParseCreateIndex parses CREATE INDEX statement
-func (p *OracleParser) ParseCreateIndex(sql string) (*sdc.Index, error) {
+func (p *OracleParser) ParseCreateIndex(sql string) (*sqlporter.Index, error) {
 	// Parse logic to be implemented
 	return nil, nil
 }
 
 // ParseDropIndex parses DROP INDEX statement
-func (p *OracleParser) ParseDropIndex(sql string) (*sdc.DropIndex, error) {
+func (p *OracleParser) ParseDropIndex(sql string) (*sqlporter.DropIndex, error) {
 	// Parse logic to be implemented
 	return nil, nil
 }
@@ -245,8 +245,8 @@ func (p *OracleParser) EscapeString(value string) string {
 }
 
 // parseCreateTable parses CREATE TABLE statement
-func (p *OracleParser) parseCreateTable(sql string) (*sdc.Table, error) {
-	table := &sdc.Table{}
+func (p *OracleParser) parseCreateTable(sql string) (*sqlporter.Table, error) {
+	table := &sqlporter.Table{}
 
 	// Extract basic table information
 	tableRegex := regexp.MustCompile(`(?i)CREATE\s+TABLE\s+(?:"([^"]+)"|([^\s(]+))\s*\((.*?)\)`)
@@ -307,20 +307,20 @@ func (p *OracleParser) parseCreateTable(sql string) (*sdc.Table, error) {
 }
 
 // parseColumn parses column definition with optimized string handling
-func (p *OracleParser) parseColumn(columnDef string) *sdc.Column {
+func (p *OracleParser) parseColumn(columnDef string) *sqlporter.Column {
 	matches := oracleColumnRegex.FindStringSubmatch(columnDef)
 	if len(matches) < 3 {
 		return nil
 	}
 
-	column := &sdc.Column{
+	column := &sqlporter.Column{
 		Name:       strings.Trim(matches[1], "\""),
 		IsNullable: true, // Default to nullable
 		Nullable:   true,
 	}
 
 	// Parse data type
-	dataType := &sdc.DataType{
+	dataType := &sqlporter.DataType{
 		Name: matches[2],
 	}
 

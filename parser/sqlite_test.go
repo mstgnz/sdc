@@ -3,7 +3,7 @@ package parser
 import (
 	"testing"
 
-	"github.com/mstgnz/sdc"
+	"github.com/mstgnz/sqlporter"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -11,7 +11,7 @@ func TestSQLiteParser_ParseCreateTable(t *testing.T) {
 	tests := []struct {
 		name     string
 		sql      string
-		expected *sdc.Table
+		expected *sqlporter.Table
 		wantErr  bool
 	}{
 		{
@@ -27,53 +27,53 @@ func TestSQLiteParser_ParseCreateTable(t *testing.T) {
 				updated_at DATETIME,
 				CONSTRAINT users_email_check CHECK (email REGEXP '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$')
 			);`,
-			expected: &sdc.Table{
+			expected: &sqlporter.Table{
 				Name: "users",
-				Columns: []*sdc.Column{
+				Columns: []*sqlporter.Column{
 					{
 						Name:       "id",
-						DataType:   &sdc.DataType{Name: "INTEGER"},
+						DataType:   &sqlporter.DataType{Name: "INTEGER"},
 						IsNullable: false,
 						Extra:      "auto_increment",
 					},
 					{
 						Name:       "username",
-						DataType:   &sdc.DataType{Name: "TEXT"},
+						DataType:   &sqlporter.DataType{Name: "TEXT"},
 						IsNullable: false,
 					},
 					{
 						Name:       "email",
-						DataType:   &sdc.DataType{Name: "TEXT"},
+						DataType:   &sqlporter.DataType{Name: "TEXT"},
 						IsNullable: false,
 					},
 					{
 						Name:       "password",
-						DataType:   &sdc.DataType{Name: "TEXT"},
+						DataType:   &sqlporter.DataType{Name: "TEXT"},
 						IsNullable: false,
 					},
 					{
 						Name:       "full_name",
-						DataType:   &sdc.DataType{Name: "TEXT"},
+						DataType:   &sqlporter.DataType{Name: "TEXT"},
 						IsNullable: true,
 					},
 					{
 						Name:       "age",
-						DataType:   &sdc.DataType{Name: "INTEGER"},
+						DataType:   &sqlporter.DataType{Name: "INTEGER"},
 						IsNullable: true,
 					},
 					{
 						Name:       "created_at",
-						DataType:   &sdc.DataType{Name: "DATETIME"},
+						DataType:   &sqlporter.DataType{Name: "DATETIME"},
 						Default:    "CURRENT_TIMESTAMP",
 						IsNullable: true,
 					},
 					{
 						Name:       "updated_at",
-						DataType:   &sdc.DataType{Name: "DATETIME"},
+						DataType:   &sqlporter.DataType{Name: "DATETIME"},
 						IsNullable: true,
 					},
 				},
-				Constraints: []*sdc.Constraint{
+				Constraints: []*sqlporter.Constraint{
 					{
 						Name:    "pk_users",
 						Type:    "PRIMARY KEY",
@@ -99,45 +99,45 @@ func TestSQLiteParser_ParseCreateTable(t *testing.T) {
 				created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 				FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT
 			);`,
-			expected: &sdc.Table{
+			expected: &sqlporter.Table{
 				Name: "orders",
-				Columns: []*sdc.Column{
+				Columns: []*sqlporter.Column{
 					{
 						Name:       "id",
-						DataType:   &sdc.DataType{Name: "INTEGER"},
+						DataType:   &sqlporter.DataType{Name: "INTEGER"},
 						IsNullable: false,
 						Extra:      "auto_increment",
 					},
 					{
 						Name:       "user_id",
-						DataType:   &sdc.DataType{Name: "INTEGER"},
+						DataType:   &sqlporter.DataType{Name: "INTEGER"},
 						IsNullable: false,
 					},
 					{
 						Name:       "product_id",
-						DataType:   &sdc.DataType{Name: "INTEGER"},
+						DataType:   &sqlporter.DataType{Name: "INTEGER"},
 						IsNullable: false,
 					},
 					{
 						Name:       "quantity",
-						DataType:   &sdc.DataType{Name: "INTEGER"},
+						DataType:   &sqlporter.DataType{Name: "INTEGER"},
 						IsNullable: false,
 						Default:    "1",
 					},
 					{
 						Name:       "status",
-						DataType:   &sdc.DataType{Name: "TEXT"},
+						DataType:   &sqlporter.DataType{Name: "TEXT"},
 						IsNullable: false,
 						Default:    "'pending'",
 					},
 					{
 						Name:       "created_at",
-						DataType:   &sdc.DataType{Name: "DATETIME"},
+						DataType:   &sqlporter.DataType{Name: "DATETIME"},
 						Default:    "CURRENT_TIMESTAMP",
 						IsNullable: true,
 					},
 				},
-				Constraints: []*sdc.Constraint{
+				Constraints: []*sqlporter.Constraint{
 					{
 						Name:    "pk_orders",
 						Type:    "PRIMARY KEY",
@@ -184,19 +184,19 @@ func TestSQLiteParser_ParseAlterTable(t *testing.T) {
 	tests := []struct {
 		name     string
 		sql      string
-		expected *sdc.Table
+		expected *sqlporter.Table
 		wantErr  bool
 	}{
 		{
 			name: "Add column",
 			sql: `ALTER TABLE users 
 				ADD COLUMN middle_name TEXT;`,
-			expected: &sdc.Table{
+			expected: &sqlporter.Table{
 				Name: "users",
-				Columns: []*sdc.Column{
+				Columns: []*sqlporter.Column{
 					{
 						Name:       "middle_name",
-						DataType:   &sdc.DataType{Name: "TEXT"},
+						DataType:   &sqlporter.DataType{Name: "TEXT"},
 						IsNullable: true,
 					},
 				},
@@ -207,7 +207,7 @@ func TestSQLiteParser_ParseAlterTable(t *testing.T) {
 			name: "Drop column",
 			sql: `ALTER TABLE users 
 				DROP COLUMN middle_name;`,
-			expected: &sdc.Table{
+			expected: &sqlporter.Table{
 				Name: "users",
 			},
 			wantErr: false,
@@ -216,7 +216,7 @@ func TestSQLiteParser_ParseAlterTable(t *testing.T) {
 			name: "Rename table",
 			sql: `ALTER TABLE users 
 				RENAME TO new_users;`,
-			expected: &sdc.Table{
+			expected: &sqlporter.Table{
 				Name: "new_users",
 			},
 			wantErr: false,
@@ -242,13 +242,13 @@ func TestSQLiteParser_ParseDropTable(t *testing.T) {
 	tests := []struct {
 		name     string
 		sql      string
-		expected *sdc.Table
+		expected *sqlporter.Table
 		wantErr  bool
 	}{
 		{
 			name: "Drop table",
 			sql:  "DROP TABLE users;",
-			expected: &sdc.Table{
+			expected: &sqlporter.Table{
 				Name: "users",
 			},
 			wantErr: false,
@@ -256,7 +256,7 @@ func TestSQLiteParser_ParseDropTable(t *testing.T) {
 		{
 			name: "Drop table if exists",
 			sql:  "DROP TABLE IF EXISTS users;",
-			expected: &sdc.Table{
+			expected: &sqlporter.Table{
 				Name: "users",
 			},
 			wantErr: false,
@@ -282,13 +282,13 @@ func TestSQLiteParser_ParseCreateIndex(t *testing.T) {
 	tests := []struct {
 		name     string
 		sql      string
-		expected *sdc.Index
+		expected *sqlporter.Index
 		wantErr  bool
 	}{
 		{
 			name: "Create index",
 			sql:  "CREATE INDEX idx_users_email ON users(email);",
-			expected: &sdc.Index{
+			expected: &sqlporter.Index{
 				Name:    "idx_users_email",
 				Columns: []string{"email"},
 			},
@@ -297,7 +297,7 @@ func TestSQLiteParser_ParseCreateIndex(t *testing.T) {
 		{
 			name: "Create unique index",
 			sql:  "CREATE UNIQUE INDEX idx_users_username ON users(username);",
-			expected: &sdc.Index{
+			expected: &sqlporter.Index{
 				Name:    "idx_users_username",
 				Columns: []string{"username"},
 				Unique:  true,
@@ -307,7 +307,7 @@ func TestSQLiteParser_ParseCreateIndex(t *testing.T) {
 		{
 			name: "Create index with multiple columns",
 			sql:  "CREATE INDEX idx_users_name ON users(first_name, last_name);",
-			expected: &sdc.Index{
+			expected: &sqlporter.Index{
 				Name:    "idx_users_name",
 				Columns: []string{"first_name", "last_name"},
 			},
@@ -334,13 +334,13 @@ func TestSQLiteParser_ParseDropIndex(t *testing.T) {
 	tests := []struct {
 		name     string
 		sql      string
-		expected *sdc.Index
+		expected *sqlporter.Index
 		wantErr  bool
 	}{
 		{
 			name: "Drop index",
 			sql:  "DROP INDEX idx_users_email;",
-			expected: &sdc.Index{
+			expected: &sqlporter.Index{
 				Name: "idx_users_email",
 			},
 			wantErr: false,
@@ -348,7 +348,7 @@ func TestSQLiteParser_ParseDropIndex(t *testing.T) {
 		{
 			name: "Drop index if exists",
 			sql:  "DROP INDEX IF EXISTS idx_users_email;",
-			expected: &sdc.Index{
+			expected: &sqlporter.Index{
 				Name: "idx_users_email",
 			},
 			wantErr: false,

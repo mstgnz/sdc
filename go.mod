@@ -1,4 +1,4 @@
-module github.com/mstgnz/sdc
+module github.com/mstgnz/sqlporter
 
 go 1.23
 

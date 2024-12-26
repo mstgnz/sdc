@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mstgnz/sdc"
+	"github.com/mstgnz/sqlporter"
 )
 
 // Precompiled regex patterns for better performance
@@ -32,9 +32,9 @@ func NewPostgresParser() *PostgresParser {
 }
 
 // Parse converts PostgreSQL dump to Entity structure
-func (p *PostgresParser) Parse(sql string) (*sdc.Entity, error) {
-	entity := &sdc.Entity{
-		Tables: make([]*sdc.Table, 0), // Pre-allocate slice
+func (p *PostgresParser) Parse(sql string) (*sqlporter.Entity, error) {
+	entity := &sqlporter.Entity{
+		Tables: make([]*sqlporter.Table, 0), // Pre-allocate slice
 	}
 
 	// Remove comments and normalize whitespace once
@@ -63,7 +63,7 @@ func (p *PostgresParser) Parse(sql string) (*sdc.Entity, error) {
 }
 
 // Convert transforms Entity structure to PostgreSQL format with optimized string handling
-func (p *PostgresParser) Convert(entity *sdc.Entity) (string, error) {
+func (p *PostgresParser) Convert(entity *sqlporter.Entity) (string, error) {
 	// Reset and reuse string builder
 	p.builderPool.Reset()
 	result := &p.builderPool
@@ -146,17 +146,17 @@ func (p *PostgresParser) Convert(entity *sdc.Entity) (string, error) {
 }
 
 // parseCreateTable parses CREATE TABLE statement with optimized string handling
-func (p *PostgresParser) parseCreateTable(sql string) (*sdc.Table, error) {
+func (p *PostgresParser) parseCreateTable(sql string) (*sqlporter.Table, error) {
 	matches := postgresCreateTableRegex.FindStringSubmatch(sql)
 	if len(matches) < 4 {
 		return nil, fmt.Errorf("invalid CREATE TABLE statement")
 	}
 
-	table := &sdc.Table{
+	table := &sqlporter.Table{
 		Schema:      strings.Trim(matches[1], "\""),
 		Name:        strings.Trim(matches[2], "\""),
-		Columns:     make([]*sdc.Column, 0),     // Pre-allocate slices
-		Constraints: make([]*sdc.Constraint, 0), // Pre-allocate slices
+		Columns:     make([]*sqlporter.Column, 0),     // Pre-allocate slices
+		Constraints: make([]*sqlporter.Constraint, 0), // Pre-allocate slices
 	}
 
 	// Parse column definitions efficiently
@@ -191,20 +191,20 @@ func (p *PostgresParser) parseCreateTable(sql string) (*sdc.Table, error) {
 }
 
 // parseColumn parses column definition with optimized string handling
-func (p *PostgresParser) parseColumn(columnDef string) *sdc.Column {
+func (p *PostgresParser) parseColumn(columnDef string) *sqlporter.Column {
 	matches := postgresColumnRegex.FindStringSubmatch(columnDef)
 	if len(matches) < 3 {
 		return nil
 	}
 
-	column := &sdc.Column{
+	column := &sqlporter.Column{
 		Name:       strings.Trim(matches[1], "\""),
 		IsNullable: true, // Default to nullable
 		Nullable:   true,
 	}
 
 	// Parse data type
-	dataType := &sdc.DataType{
+	dataType := &sqlporter.DataType{
 		Name: matches[2],
 	}
 
@@ -270,8 +270,8 @@ func (p *PostgresParser) parseColumn(columnDef string) *sdc.Column {
 }
 
 // parseConstraint parses constraint definition
-func (p *PostgresParser) parseConstraint(constraintDef string) *sdc.Constraint {
-	constraint := &sdc.Constraint{}
+func (p *PostgresParser) parseConstraint(constraintDef string) *sqlporter.Constraint {
+	constraint := &sqlporter.Constraint{}
 
 	// Split constraint definition into parts
 	parts := strings.Fields(constraintDef)
@@ -367,7 +367,7 @@ func (p *PostgresParser) parseConstraint(constraintDef string) *sdc.Constraint {
 }
 
 // convertDataType converts data type to PostgreSQL format
-func (p *PostgresParser) convertDataType(dataType *sdc.DataType) string {
+func (p *PostgresParser) convertDataType(dataType *sqlporter.DataType) string {
 	if dataType == nil {
 		return "text"
 	}
@@ -422,12 +422,12 @@ func (p *PostgresParser) convertDataType(dataType *sdc.DataType) string {
 }
 
 // ParseCreateTable parses CREATE TABLE statement
-func (p *PostgresParser) ParseCreateTable(sql string) (*sdc.Table, error) {
+func (p *PostgresParser) ParseCreateTable(sql string) (*sqlporter.Table, error) {
 	return p.parseCreateTable(sql)
 }
 
 // ParseAlterTable parses ALTER TABLE statement
-func (p *PostgresParser) ParseAlterTable(sql string) (*sdc.AlterTable, error) {
+func (p *PostgresParser) ParseAlterTable(sql string) (*sqlporter.AlterTable, error) {
 	// Remove comments and normalize whitespace
 	sql = removeComments(sql)
 	sql = normalizeWhitespace(sql)
@@ -439,7 +439,7 @@ func (p *PostgresParser) ParseAlterTable(sql string) (*sdc.AlterTable, error) {
 		return nil, fmt.Errorf("invalid ALTER TABLE statement: %s", sql)
 	}
 
-	alter := &sdc.AlterTable{
+	alter := &sqlporter.AlterTable{
 		Schema: strings.Trim(matches[1], "\""),
 		Table:  strings.Trim(matches[2], "\""),
 	}
@@ -462,7 +462,7 @@ func (p *PostgresParser) ParseAlterTable(sql string) (*sdc.AlterTable, error) {
 	}
 }
 
-func (p *PostgresParser) parseAddColumn(alter *sdc.AlterTable, action string) (*sdc.AlterTable, error) {
+func (p *PostgresParser) parseAddColumn(alter *sqlporter.AlterTable, action string) (*sqlporter.AlterTable, error) {
 	// ADD COLUMN pattern
 	addColumnRegex := regexp.MustCompile(`(?i)ADD\s+(?:COLUMN\s+)?([^\s]+)\s+(.+)`)
 	matches := addColumnRegex.FindStringSubmatch(action)
@@ -483,7 +483,7 @@ func (p *PostgresParser) parseAddColumn(alter *sdc.AlterTable, action string) (*
 	return alter, nil
 }
 
-func (p *PostgresParser) parseDropColumn(alter *sdc.AlterTable, action string) (*sdc.AlterTable, error) {
+func (p *PostgresParser) parseDropColumn(alter *sqlporter.AlterTable, action string) (*sqlporter.AlterTable, error) {
 	// DROP COLUMN pattern
 	dropColumnRegex := regexp.MustCompile(`(?i)DROP\s+(?:COLUMN\s+)?(?:IF\s+EXISTS\s+)?([^\s]+)`)
 	matches := dropColumnRegex.FindStringSubmatch(action)
@@ -492,13 +492,13 @@ func (p *PostgresParser) parseDropColumn(alter *sdc.AlterTable, action string) (
 	}
 
 	alter.Action = "DROP COLUMN"
-	alter.Column = &sdc.Column{
+	alter.Column = &sqlporter.Column{
 		Name: strings.Trim(matches[1], "\""),
 	}
 	return alter, nil
 }
 
-func (p *PostgresParser) parseAlterColumn(alter *sdc.AlterTable, action string) (*sdc.AlterTable, error) {
+func (p *PostgresParser) parseAlterColumn(alter *sqlporter.AlterTable, action string) (*sqlporter.AlterTable, error) {
 	// ALTER COLUMN pattern
 	alterColumnRegex := regexp.MustCompile(`(?i)ALTER\s+(?:COLUMN\s+)?([^\s]+)\s+(.+)`)
 	matches := alterColumnRegex.FindStringSubmatch(action)
@@ -510,7 +510,7 @@ func (p *PostgresParser) parseAlterColumn(alter *sdc.AlterTable, action string) 
 	modification := strings.TrimSpace(matches[2])
 	upperMod := strings.ToUpper(modification)
 
-	alter.Column = &sdc.Column{
+	alter.Column = &sqlporter.Column{
 		Name: columnName,
 	}
 
@@ -520,7 +520,7 @@ func (p *PostgresParser) parseAlterColumn(alter *sdc.AlterTable, action string) 
 		typeRegex := regexp.MustCompile(`(?i)TYPE\s+([^\s(]+)(?:\s*\(([^)]+)\))?`)
 		typeMatches := typeRegex.FindStringSubmatch(modification)
 		if typeMatches != nil {
-			alter.Column.DataType = &sdc.DataType{
+			alter.Column.DataType = &sqlporter.DataType{
 				Name: typeMatches[1],
 			}
 			if len(typeMatches) > 2 && typeMatches[2] != "" {
@@ -549,7 +549,7 @@ func (p *PostgresParser) parseAlterColumn(alter *sdc.AlterTable, action string) 
 	return alter, nil
 }
 
-func (p *PostgresParser) parseRename(alter *sdc.AlterTable, action string) (*sdc.AlterTable, error) {
+func (p *PostgresParser) parseRename(alter *sqlporter.AlterTable, action string) (*sqlporter.AlterTable, error) {
 	// RENAME patterns
 	renameTableRegex := regexp.MustCompile(`(?i)RENAME\s+TO\s+([^\s]+)`)
 	renameColumnRegex := regexp.MustCompile(`(?i)RENAME\s+(?:COLUMN\s+)?([^\s]+)\s+TO\s+([^\s]+)`)
@@ -557,7 +557,7 @@ func (p *PostgresParser) parseRename(alter *sdc.AlterTable, action string) (*sdc
 	// Check for RENAME COLUMN
 	if matches := renameColumnRegex.FindStringSubmatch(action); matches != nil {
 		alter.Action = "RENAME COLUMN"
-		alter.Column = &sdc.Column{
+		alter.Column = &sqlporter.Column{
 			Name: strings.Trim(matches[1], "\""),
 		}
 		alter.NewName = strings.Trim(matches[2], "\"")
@@ -587,7 +587,7 @@ func parseLength(length string) int {
 }
 
 // ParseDropTable parses DROP TABLE statement
-func (p *PostgresParser) ParseDropTable(sql string) (*sdc.DropTable, error) {
+func (p *PostgresParser) ParseDropTable(sql string) (*sqlporter.DropTable, error) {
 	// Remove comments and normalize whitespace
 	sql = removeComments(sql)
 	sql = normalizeWhitespace(sql)
@@ -599,7 +599,7 @@ func (p *PostgresParser) ParseDropTable(sql string) (*sdc.DropTable, error) {
 		return nil, fmt.Errorf("invalid DROP TABLE statement: %s", sql)
 	}
 
-	dropTable := &sdc.DropTable{
+	dropTable := &sqlporter.DropTable{
 		Schema:   strings.Trim(matches[2], "\""),
 		Table:    strings.Trim(matches[3], "\""),
 		IfExists: matches[1] != "",
@@ -610,7 +610,7 @@ func (p *PostgresParser) ParseDropTable(sql string) (*sdc.DropTable, error) {
 }
 
 // ParseCreateIndex parses CREATE INDEX statement
-func (p *PostgresParser) ParseCreateIndex(sql string) (*sdc.Index, error) {
+func (p *PostgresParser) ParseCreateIndex(sql string) (*sqlporter.Index, error) {
 	// Remove comments and normalize whitespace
 	sql = removeComments(sql)
 	sql = normalizeWhitespace(sql)
@@ -652,7 +652,7 @@ func (p *PostgresParser) ParseCreateIndex(sql string) (*sdc.Index, error) {
 		}
 	}
 
-	index := &sdc.Index{
+	index := &sqlporter.Index{
 		Schema:         strings.Trim(matches[2], "\""),
 		Name:           strings.Trim(matches[3], "\""),
 		Table:          strings.Trim(matches[5], "\""),
@@ -666,7 +666,7 @@ func (p *PostgresParser) ParseCreateIndex(sql string) (*sdc.Index, error) {
 }
 
 // ParseDropIndex parses DROP INDEX statement
-func (p *PostgresParser) ParseDropIndex(sql string) (*sdc.DropIndex, error) {
+func (p *PostgresParser) ParseDropIndex(sql string) (*sqlporter.DropIndex, error) {
 	// Remove comments and normalize whitespace
 	sql = removeComments(sql)
 	sql = normalizeWhitespace(sql)
@@ -678,7 +678,7 @@ func (p *PostgresParser) ParseDropIndex(sql string) (*sdc.DropIndex, error) {
 		return nil, fmt.Errorf("invalid DROP INDEX statement: %s", sql)
 	}
 
-	dropIndex := &sdc.DropIndex{
+	dropIndex := &sqlporter.DropIndex{
 		Schema:   strings.Trim(matches[2], "\""),
 		Index:    strings.Trim(matches[3], "\""),
 		IfExists: matches[1] != "",
@@ -751,8 +751,8 @@ func (p *PostgresParser) GetReservedWords() []string {
 }
 
 // ConvertDataTypeFrom converts source database data type to PostgreSQL data type
-func (p *PostgresParser) ConvertDataTypeFrom(sourceType string, length int, precision int, scale int) *sdc.DataType {
-	return &sdc.DataType{
+func (p *PostgresParser) ConvertDataTypeFrom(sourceType string, length int, precision int, scale int) *sqlporter.DataType {
+	return &sqlporter.DataType{
 		Name:      sourceType,
 		Length:    length,
 		Precision: precision,
@@ -761,8 +761,8 @@ func (p *PostgresParser) ConvertDataTypeFrom(sourceType string, length int, prec
 }
 
 // ParseSQL parses PostgreSQL SQL statements and returns an Entity
-func (p *PostgresParser) ParseSQL(sql string) (*sdc.Entity, error) {
-	entity := &sdc.Entity{}
+func (p *PostgresParser) ParseSQL(sql string) (*sqlporter.Entity, error) {
+	entity := &sqlporter.Entity{}
 
 	// Find CREATE TABLE statements
 	createTableRegex := regexp.MustCompile(`(?i)CREATE\s+(?:UNLOGGED\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s(]+)\s*\((.*?)\)(?:\s+INHERITS\s*\((.*?)\))?(?:\s+PARTITION\s+BY\s+(.*?))?(?:\s+WITH\s*\((.*?)\))?(?:\s+TABLESPACE\s+(\w+))?;?`)

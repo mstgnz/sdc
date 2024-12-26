@@ -3,7 +3,7 @@ package parser
 import (
 	"testing"
 
-	"github.com/mstgnz/sdc"
+	"github.com/mstgnz/sqlporter"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -13,7 +13,7 @@ func TestOracleParser_ParseCreateTable(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
-		expected *sdc.Table
+		expected *sqlporter.Table
 		wantErr  bool
 	}{
 		{
@@ -25,12 +25,12 @@ func TestOracleParser_ParseCreateTable(t *testing.T) {
 				"CREATED_AT" TIMESTAMP DEFAULT SYSTIMESTAMP,
 				CONSTRAINT "PK_USERS" PRIMARY KEY ("ID") USING INDEX TABLESPACE "USERS_IDX"
 			) TABLESPACE "USERS_DATA"`,
-			expected: &sdc.Table{
+			expected: &sqlporter.Table{
 				Name: "USERS",
-				Columns: []*sdc.Column{
+				Columns: []*sqlporter.Column{
 					{
 						Name: "ID",
-						DataType: &sdc.DataType{
+						DataType: &sqlporter.DataType{
 							Name:      "NUMBER",
 							Precision: 10,
 						},
@@ -39,7 +39,7 @@ func TestOracleParser_ParseCreateTable(t *testing.T) {
 					},
 					{
 						Name: "NAME",
-						DataType: &sdc.DataType{
+						DataType: &sqlporter.DataType{
 							Name:   "VARCHAR2",
 							Length: 100,
 						},
@@ -47,7 +47,7 @@ func TestOracleParser_ParseCreateTable(t *testing.T) {
 					},
 					{
 						Name: "EMAIL",
-						DataType: &sdc.DataType{
+						DataType: &sqlporter.DataType{
 							Name:   "VARCHAR2",
 							Length: 255,
 						},
@@ -55,14 +55,14 @@ func TestOracleParser_ParseCreateTable(t *testing.T) {
 					},
 					{
 						Name: "CREATED_AT",
-						DataType: &sdc.DataType{
+						DataType: &sqlporter.DataType{
 							Name: "TIMESTAMP",
 						},
 						IsNullable: true,
 						Default:    "SYSTIMESTAMP",
 					},
 				},
-				Constraints: []*sdc.Constraint{
+				Constraints: []*sqlporter.Constraint{
 					{
 						Name:    "PK_USERS",
 						Type:    "PRIMARY KEY",
@@ -70,7 +70,7 @@ func TestOracleParser_ParseCreateTable(t *testing.T) {
 					},
 				},
 				TableSpace: "USERS_DATA",
-				Indexes: []*sdc.Index{
+				Indexes: []*sqlporter.Index{
 					{
 						Name:      "PK_USERS",
 						Columns:   []string{"ID"},
@@ -93,12 +93,12 @@ func TestOracleParser_ParseCreateTable(t *testing.T) {
 				CONSTRAINT "FK_ORDERS_USERS" FOREIGN KEY ("USER_ID") REFERENCES "USERS" ("ID") ON DELETE CASCADE
 			) TABLESPACE "ORDERS_DATA"
 			STORAGE (INITIAL 1M NEXT 1M)`,
-			expected: &sdc.Table{
+			expected: &sqlporter.Table{
 				Name: "ORDERS",
-				Columns: []*sdc.Column{
+				Columns: []*sqlporter.Column{
 					{
 						Name: "ORDER_ID",
-						DataType: &sdc.DataType{
+						DataType: &sqlporter.DataType{
 							Name:      "NUMBER",
 							Precision: 10,
 						},
@@ -107,7 +107,7 @@ func TestOracleParser_ParseCreateTable(t *testing.T) {
 					},
 					{
 						Name: "USER_ID",
-						DataType: &sdc.DataType{
+						DataType: &sqlporter.DataType{
 							Name:      "NUMBER",
 							Precision: 10,
 						},
@@ -115,7 +115,7 @@ func TestOracleParser_ParseCreateTable(t *testing.T) {
 					},
 					{
 						Name: "ORDER_NUMBER",
-						DataType: &sdc.DataType{
+						DataType: &sqlporter.DataType{
 							Name:   "VARCHAR2",
 							Length: 50,
 						},
@@ -123,7 +123,7 @@ func TestOracleParser_ParseCreateTable(t *testing.T) {
 					},
 					{
 						Name: "TOTAL",
-						DataType: &sdc.DataType{
+						DataType: &sqlporter.DataType{
 							Name:      "NUMBER",
 							Precision: 10,
 							Scale:     2,
@@ -132,7 +132,7 @@ func TestOracleParser_ParseCreateTable(t *testing.T) {
 						Default:    "0.00",
 					},
 				},
-				Constraints: []*sdc.Constraint{
+				Constraints: []*sqlporter.Constraint{
 					{
 						Name:    "PK_ORDERS",
 						Type:    "PRIMARY KEY",
@@ -153,7 +153,7 @@ func TestOracleParser_ParseCreateTable(t *testing.T) {
 					},
 				},
 				TableSpace: "ORDERS_DATA",
-				Indexes: []*sdc.Index{
+				Indexes: []*sqlporter.Index{
 					{
 						Name:    "PK_ORDERS",
 						Columns: []string{"ORDER_ID"},
@@ -189,12 +189,12 @@ func TestOracleParser_ConvertDataType(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		input    *sdc.DataType
+		input    *sqlporter.DataType
 		expected string
 	}{
 		{
 			name: "VARCHAR2 with length",
-			input: &sdc.DataType{
+			input: &sqlporter.DataType{
 				Name:   "VARCHAR2",
 				Length: 100,
 			},
@@ -202,14 +202,14 @@ func TestOracleParser_ConvertDataType(t *testing.T) {
 		},
 		{
 			name: "VARCHAR2 without length",
-			input: &sdc.DataType{
+			input: &sqlporter.DataType{
 				Name: "VARCHAR2",
 			},
 			expected: "VARCHAR2(4000)",
 		},
 		{
 			name: "NUMBER with precision and scale",
-			input: &sdc.DataType{
+			input: &sqlporter.DataType{
 				Name:      "NUMBER",
 				Precision: 10,
 				Scale:     2,
@@ -218,7 +218,7 @@ func TestOracleParser_ConvertDataType(t *testing.T) {
 		},
 		{
 			name: "NUMBER with only precision",
-			input: &sdc.DataType{
+			input: &sqlporter.DataType{
 				Name:      "NUMBER",
 				Precision: 10,
 			},
@@ -226,42 +226,42 @@ func TestOracleParser_ConvertDataType(t *testing.T) {
 		},
 		{
 			name: "INTEGER to NUMBER",
-			input: &sdc.DataType{
+			input: &sqlporter.DataType{
 				Name: "INTEGER",
 			},
 			expected: "NUMBER(38)",
 		},
 		{
 			name: "SMALLINT to NUMBER",
-			input: &sdc.DataType{
+			input: &sqlporter.DataType{
 				Name: "SMALLINT",
 			},
 			expected: "NUMBER(5)",
 		},
 		{
 			name: "BOOLEAN to NUMBER",
-			input: &sdc.DataType{
+			input: &sqlporter.DataType{
 				Name: "BOOLEAN",
 			},
 			expected: "NUMBER(1)",
 		},
 		{
 			name: "TEXT to CLOB",
-			input: &sdc.DataType{
+			input: &sqlporter.DataType{
 				Name: "TEXT",
 			},
 			expected: "CLOB",
 		},
 		{
 			name: "NTEXT to NCLOB",
-			input: &sdc.DataType{
+			input: &sqlporter.DataType{
 				Name: "NTEXT",
 			},
 			expected: "NCLOB",
 		},
 		{
 			name: "TIMESTAMP with scale",
-			input: &sdc.DataType{
+			input: &sqlporter.DataType{
 				Name:  "TIMESTAMP",
 				Scale: 6,
 			},
@@ -269,7 +269,7 @@ func TestOracleParser_ConvertDataType(t *testing.T) {
 		},
 		{
 			name: "FLOAT with precision",
-			input: &sdc.DataType{
+			input: &sqlporter.DataType{
 				Name:      "FLOAT",
 				Precision: 126,
 			},
@@ -277,14 +277,14 @@ func TestOracleParser_ConvertDataType(t *testing.T) {
 		},
 		{
 			name: "REAL to FLOAT",
-			input: &sdc.DataType{
+			input: &sqlporter.DataType{
 				Name: "REAL",
 			},
 			expected: "FLOAT(63)",
 		},
 		{
 			name: "Unknown type defaults to VARCHAR2",
-			input: &sdc.DataType{
+			input: &sqlporter.DataType{
 				Name: "UNKNOWN_TYPE",
 			},
 			expected: "VARCHAR2(4000)",

@@ -3,7 +3,7 @@ package parser
 import (
 	"testing"
 
-	"github.com/mstgnz/sdc"
+	"github.com/mstgnz/sqlporter"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -11,7 +11,7 @@ func TestMySQLParser_ParseCreateTable(t *testing.T) {
 	tests := []struct {
 		name     string
 		sql      string
-		expected *sdc.Table
+		expected *sqlporter.Table
 		wantErr  bool
 	}{
 		{
@@ -27,54 +27,54 @@ func TestMySQLParser_ParseCreateTable(t *testing.T) {
 				updated_at TIMESTAMP,
 				CONSTRAINT users_email_check CHECK (email REGEXP '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$')
 			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
-			expected: &sdc.Table{
+			expected: &sqlporter.Table{
 				Name: "users",
-				Columns: []*sdc.Column{
+				Columns: []*sqlporter.Column{
 					{
 						Name:          "id",
-						DataType:      &sdc.DataType{Name: "INT"},
+						DataType:      &sqlporter.DataType{Name: "INT"},
 						PrimaryKey:    true,
 						AutoIncrement: true,
 					},
 					{
 						Name:     "username",
-						DataType: &sdc.DataType{Name: "VARCHAR", Length: 50},
+						DataType: &sqlporter.DataType{Name: "VARCHAR", Length: 50},
 						Nullable: false,
 						Unique:   true,
 					},
 					{
 						Name:     "email",
-						DataType: &sdc.DataType{Name: "VARCHAR", Length: 100},
+						DataType: &sqlporter.DataType{Name: "VARCHAR", Length: 100},
 						Nullable: false,
 						Unique:   true,
 					},
 					{
 						Name:     "password",
-						DataType: &sdc.DataType{Name: "VARCHAR", Length: 100},
+						DataType: &sqlporter.DataType{Name: "VARCHAR", Length: 100},
 						Nullable: false,
 					},
 					{
 						Name:     "full_name",
-						DataType: &sdc.DataType{Name: "VARCHAR", Length: 100},
+						DataType: &sqlporter.DataType{Name: "VARCHAR", Length: 100},
 						Nullable: true,
 					},
 					{
 						Name:     "age",
-						DataType: &sdc.DataType{Name: "INT"},
+						DataType: &sqlporter.DataType{Name: "INT"},
 						Check:    "age >= 18",
 					},
 					{
 						Name:     "created_at",
-						DataType: &sdc.DataType{Name: "TIMESTAMP"},
+						DataType: &sqlporter.DataType{Name: "TIMESTAMP"},
 						Default:  "CURRENT_TIMESTAMP",
 					},
 					{
 						Name:     "updated_at",
-						DataType: &sdc.DataType{Name: "TIMESTAMP"},
+						DataType: &sqlporter.DataType{Name: "TIMESTAMP"},
 						Nullable: true,
 					},
 				},
-				Constraints: []*sdc.Constraint{
+				Constraints: []*sqlporter.Constraint{
 					{
 						Name:  "users_email_check",
 						Type:  "CHECK",
@@ -101,44 +101,44 @@ func TestMySQLParser_ParseCreateTable(t *testing.T) {
 				FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
 				FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT
 			) ENGINE=InnoDB;`,
-			expected: &sdc.Table{
+			expected: &sqlporter.Table{
 				Name: "orders",
-				Columns: []*sdc.Column{
+				Columns: []*sqlporter.Column{
 					{
 						Name:          "id",
-						DataType:      &sdc.DataType{Name: "INT"},
+						DataType:      &sqlporter.DataType{Name: "INT"},
 						PrimaryKey:    true,
 						AutoIncrement: true,
 					},
 					{
 						Name:     "user_id",
-						DataType: &sdc.DataType{Name: "INT"},
+						DataType: &sqlporter.DataType{Name: "INT"},
 						Nullable: false,
 					},
 					{
 						Name:     "product_id",
-						DataType: &sdc.DataType{Name: "INT"},
+						DataType: &sqlporter.DataType{Name: "INT"},
 						Nullable: false,
 					},
 					{
 						Name:     "quantity",
-						DataType: &sdc.DataType{Name: "INT"},
+						DataType: &sqlporter.DataType{Name: "INT"},
 						Nullable: false,
 						Default:  "1",
 					},
 					{
 						Name:     "status",
-						DataType: &sdc.DataType{Name: "VARCHAR", Length: 20},
+						DataType: &sqlporter.DataType{Name: "VARCHAR", Length: 20},
 						Nullable: false,
 						Default:  "'pending'",
 					},
 					{
 						Name:     "created_at",
-						DataType: &sdc.DataType{Name: "TIMESTAMP"},
+						DataType: &sqlporter.DataType{Name: "TIMESTAMP"},
 						Default:  "CURRENT_TIMESTAMP",
 					},
 				},
-				Constraints: []*sdc.Constraint{
+				Constraints: []*sqlporter.Constraint{
 					{
 						Type:       "FOREIGN KEY",
 						Columns:    []string{"user_id"},
@@ -181,19 +181,19 @@ func TestMySQLParser_ParseAlterTable(t *testing.T) {
 	tests := []struct {
 		name     string
 		sql      string
-		expected *sdc.AlterTable
+		expected *sqlporter.AlterTable
 		wantErr  bool
 	}{
 		{
 			name: "Add column",
 			sql: `ALTER TABLE users 
 				ADD COLUMN middle_name VARCHAR(50);`,
-			expected: &sdc.AlterTable{
+			expected: &sqlporter.AlterTable{
 				Table:  "users",
 				Action: "ADD COLUMN",
-				Column: &sdc.Column{
+				Column: &sqlporter.Column{
 					Name:     "middle_name",
-					DataType: &sdc.DataType{Name: "VARCHAR", Length: 50},
+					DataType: &sqlporter.DataType{Name: "VARCHAR", Length: 50},
 				},
 			},
 			wantErr: false,
@@ -202,10 +202,10 @@ func TestMySQLParser_ParseAlterTable(t *testing.T) {
 			name: "Drop column",
 			sql: `ALTER TABLE users 
 				DROP COLUMN middle_name;`,
-			expected: &sdc.AlterTable{
+			expected: &sqlporter.AlterTable{
 				Table:  "users",
 				Action: "DROP COLUMN",
-				Column: &sdc.Column{
+				Column: &sqlporter.Column{
 					Name: "middle_name",
 				},
 			},
@@ -215,10 +215,10 @@ func TestMySQLParser_ParseAlterTable(t *testing.T) {
 			name: "Add constraint",
 			sql: `ALTER TABLE users 
 				ADD CONSTRAINT users_age_check CHECK (age >= 21);`,
-			expected: &sdc.AlterTable{
+			expected: &sqlporter.AlterTable{
 				Table:  "users",
 				Action: "ADD CONSTRAINT",
-				Constraint: &sdc.Constraint{
+				Constraint: &sqlporter.Constraint{
 					Name:  "users_age_check",
 					Type:  "CHECK",
 					Check: "age >= 21",
@@ -247,13 +247,13 @@ func TestMySQLParser_ParseDropTable(t *testing.T) {
 	tests := []struct {
 		name     string
 		sql      string
-		expected *sdc.DropTable
+		expected *sqlporter.DropTable
 		wantErr  bool
 	}{
 		{
 			name: "Drop table",
 			sql:  "DROP TABLE users;",
-			expected: &sdc.DropTable{
+			expected: &sqlporter.DropTable{
 				Table: "users",
 			},
 			wantErr: false,
@@ -261,7 +261,7 @@ func TestMySQLParser_ParseDropTable(t *testing.T) {
 		{
 			name: "Drop table if exists",
 			sql:  "DROP TABLE IF EXISTS users;",
-			expected: &sdc.DropTable{
+			expected: &sqlporter.DropTable{
 				Table:    "users",
 				IfExists: true,
 			},
@@ -270,7 +270,7 @@ func TestMySQLParser_ParseDropTable(t *testing.T) {
 		{
 			name: "Drop table cascade",
 			sql:  "DROP TABLE users CASCADE;",
-			expected: &sdc.DropTable{
+			expected: &sqlporter.DropTable{
 				Table:   "users",
 				Cascade: true,
 			},
@@ -297,13 +297,13 @@ func TestMySQLParser_ParseCreateIndex(t *testing.T) {
 	tests := []struct {
 		name     string
 		sql      string
-		expected *sdc.Index
+		expected *sqlporter.Index
 		wantErr  bool
 	}{
 		{
 			name: "Create index",
 			sql:  "CREATE INDEX idx_users_email ON users(email);",
-			expected: &sdc.Index{
+			expected: &sqlporter.Index{
 				Name:    "idx_users_email",
 				Table:   "users",
 				Columns: []string{"email"},
@@ -313,7 +313,7 @@ func TestMySQLParser_ParseCreateIndex(t *testing.T) {
 		{
 			name: "Create unique index",
 			sql:  "CREATE UNIQUE INDEX idx_users_username ON users(username);",
-			expected: &sdc.Index{
+			expected: &sqlporter.Index{
 				Name:    "idx_users_username",
 				Table:   "users",
 				Columns: []string{"username"},
@@ -324,7 +324,7 @@ func TestMySQLParser_ParseCreateIndex(t *testing.T) {
 		{
 			name: "Create index with include",
 			sql:  "CREATE INDEX idx_users_name ON users(first_name, last_name) USING BTREE;",
-			expected: &sdc.Index{
+			expected: &sqlporter.Index{
 				Name:    "idx_users_name",
 				Table:   "users",
 				Columns: []string{"first_name", "last_name"},
@@ -355,13 +355,13 @@ func TestMySQLParser_ParseDropIndex(t *testing.T) {
 	tests := []struct {
 		name     string
 		sql      string
-		expected *sdc.DropIndex
+		expected *sqlporter.DropIndex
 		wantErr  bool
 	}{
 		{
 			name: "Drop index",
 			sql:  "DROP INDEX idx_users_email ON users;",
-			expected: &sdc.DropIndex{
+			expected: &sqlporter.DropIndex{
 				Table: "users",
 				Index: "idx_users_email",
 			},
@@ -370,7 +370,7 @@ func TestMySQLParser_ParseDropIndex(t *testing.T) {
 		{
 			name: "Drop index if exists",
 			sql:  "DROP INDEX IF EXISTS idx_users_email ON users;",
-			expected: &sdc.DropIndex{
+			expected: &sqlporter.DropIndex{
 				Table:    "users",
 				Index:    "idx_users_email",
 				IfExists: true,

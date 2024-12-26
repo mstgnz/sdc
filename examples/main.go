@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/mstgnz/sdc/parser"
+	"github.com/mstgnz/sqlporter/parser"
 )
 
 func main() {

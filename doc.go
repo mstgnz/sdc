@@ -1,5 +1,5 @@
 /*
-Package sdc provides SQL dump conversion functionality between different database systems.
+Package sqlporter provides SQL dump conversion functionality between different database systems.
 
 SDC (SQL Dump Converter) is a powerful Go library that allows you to convert SQL dump files
 between different database systems. This library is particularly useful when you need to
@@ -7,10 +7,10 @@ migrate a database schema from one system to another.
 
 Basic Usage:
 
-	import "github.com/mstgnz/sdc"
+	import "github.com/mstgnz/sqlporter"
 
 	// Create a MySQL parser
-	parser := sdc.NewMySQLParser()
+	parser := sqlporter.NewMySQLParser()
 
 	// Parse MySQL dump
 	entity, err := parser.Parse(mysqlDump)
@@ -19,14 +19,14 @@ Basic Usage:
 	}
 
 	// Convert to PostgreSQL
-	pgParser := sdc.NewPostgresParser()
+	pgParser := sqlporter.NewPostgresParser()
 	pgSQL, err := pgParser.Convert(entity)
 
 Migration Support:
 
 The package provides migration support through the migration package:
 
-	import "github.com/mstgnz/sdc/migration"
+	import "github.com/mstgnz/sqlporter/migration"
 
 	// Create migration manager
 	manager := migration.NewMigrationManager(driver)
@@ -38,7 +38,7 @@ Schema Comparison:
 
 Compare database schemas using the schema package:
 
-	import "github.com/mstgnz/sdc/schema"
+	import "github.com/mstgnz/sqlporter/schema"
 
 	// Create schema comparer
 	comparer := schema.NewSchemaComparer(sourceTables, targetTables)
@@ -78,7 +78,7 @@ Logging:
 
 The package provides a structured logging system:
 
-	import "github.com/mstgnz/sdc/logger"
+	import "github.com/mstgnz/sqlporter/logger"
 
 	log := logger.NewLogger(logger.Config{
 		Level:  logger.INFO,
@@ -107,6 +107,6 @@ Thread Safety:
 
 All public APIs in this package are thread-safe and can be used concurrently.
 
-For more information and examples, visit: https://github.com/mstgnz/sdc
+For more information and examples, visit: https://github.com/mstgnz/sqlporter
 */
-package sdc
+package sqlporter

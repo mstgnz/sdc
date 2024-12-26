@@ -1,4 +1,4 @@
-# SDC (SQL Data Converter)
+# SQLPORTER (Parser, Mapper, Converter, Migrator, etc.)
 
 A high-performance SQL parser and converter library written in Go, designed to handle large-scale database schema migrations and transformations.
 
@@ -39,7 +39,7 @@ A high-performance SQL parser and converter library written in Go, designed to h
 ## Installation
 
 ```bash
-go get github.com/mstgnz/sdc
+go get github.com/mstgnz/sqlporter
 ```
 
 ## Quick Start
@@ -50,7 +50,7 @@ package main
 import (
     "context"
     "fmt"
-    "github.com/mstgnz/sdc/parser"
+    "github.com/mstgnz/sqlporter/parser"
     "time"
 )
 
@@ -166,4 +166,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Contact
 
 - GitHub: [@mstgnz](https://github.com/mstgnz)
-- Project Link: [https://github.com/mstgnz/sdc](https://github.com/mstgnz/sdc)
+- Project Link: [https://github.com/mstgnz/sqlporter](https://github.com/mstgnz/sqlporter)
