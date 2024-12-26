@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  sdc:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mstgnz/sdc:latest
+    container_name: sdc
+    restart: unless-stopped
+    environment:
+      - TZ=UTC
+    volumes:
+      - ./config:/root/config
+      - ./data:/root/data
+    networks:
+      - sdc-network
+
+networks:
+  sdc-network:
+    driver: bridge 
