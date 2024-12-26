@@ -3,6 +3,7 @@ package parser
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/mstgnz/sdc"
@@ -427,36 +428,274 @@ func (p *PostgresParser) ParseCreateTable(sql string) (*sdc.Table, error) {
 
 // ParseAlterTable parses ALTER TABLE statement
 func (p *PostgresParser) ParseAlterTable(sql string) (*sdc.AlterTable, error) {
-	// Parse logic to be implemented
-	return nil, nil
+	// Remove comments and normalize whitespace
+	sql = removeComments(sql)
+	sql = normalizeWhitespace(sql)
+
+	// Basic ALTER TABLE pattern
+	alterTableRegex := regexp.MustCompile(`(?i)ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:([^\s.]+)\.)?([^\s]+)\s+(.+)`)
+	matches := alterTableRegex.FindStringSubmatch(sql)
+	if matches == nil {
+		return nil, fmt.Errorf("invalid ALTER TABLE statement: %s", sql)
+	}
+
+	alter := &sdc.AlterTable{
+		Schema: strings.Trim(matches[1], "\""),
+		Table:  strings.Trim(matches[2], "\""),
+	}
+
+	// Parse the alteration type and details
+	action := strings.TrimSpace(matches[3])
+	upperAction := strings.ToUpper(action)
+
+	switch {
+	case strings.HasPrefix(upperAction, "ADD"):
+		return p.parseAddColumn(alter, action)
+	case strings.HasPrefix(upperAction, "DROP"):
+		return p.parseDropColumn(alter, action)
+	case strings.HasPrefix(upperAction, "ALTER"):
+		return p.parseAlterColumn(alter, action)
+	case strings.HasPrefix(upperAction, "RENAME"):
+		return p.parseRename(alter, action)
+	default:
+		return nil, fmt.Errorf("unsupported ALTER TABLE action: %s", action)
+	}
+}
+
+func (p *PostgresParser) parseAddColumn(alter *sdc.AlterTable, action string) (*sdc.AlterTable, error) {
+	// ADD COLUMN pattern
+	addColumnRegex := regexp.MustCompile(`(?i)ADD\s+(?:COLUMN\s+)?([^\s]+)\s+(.+)`)
+	matches := addColumnRegex.FindStringSubmatch(action)
+	if matches == nil {
+		return nil, fmt.Errorf("invalid ADD COLUMN syntax: %s", action)
+	}
+
+	columnName := strings.Trim(matches[1], "\"")
+	columnDef := matches[2]
+
+	column := p.parseColumn(columnName + " " + columnDef)
+	if column == nil {
+		return nil, fmt.Errorf("failed to parse column definition: %s", columnDef)
+	}
+
+	alter.Action = "ADD COLUMN"
+	alter.Column = column
+	return alter, nil
+}
+
+func (p *PostgresParser) parseDropColumn(alter *sdc.AlterTable, action string) (*sdc.AlterTable, error) {
+	// DROP COLUMN pattern
+	dropColumnRegex := regexp.MustCompile(`(?i)DROP\s+(?:COLUMN\s+)?(?:IF\s+EXISTS\s+)?([^\s]+)`)
+	matches := dropColumnRegex.FindStringSubmatch(action)
+	if matches == nil {
+		return nil, fmt.Errorf("invalid DROP COLUMN syntax: %s", action)
+	}
+
+	alter.Action = "DROP COLUMN"
+	alter.Column = &sdc.Column{
+		Name: strings.Trim(matches[1], "\""),
+	}
+	return alter, nil
+}
+
+func (p *PostgresParser) parseAlterColumn(alter *sdc.AlterTable, action string) (*sdc.AlterTable, error) {
+	// ALTER COLUMN pattern
+	alterColumnRegex := regexp.MustCompile(`(?i)ALTER\s+(?:COLUMN\s+)?([^\s]+)\s+(.+)`)
+	matches := alterColumnRegex.FindStringSubmatch(action)
+	if matches == nil {
+		return nil, fmt.Errorf("invalid ALTER COLUMN syntax: %s", action)
+	}
+
+	columnName := strings.Trim(matches[1], "\"")
+	modification := strings.TrimSpace(matches[2])
+	upperMod := strings.ToUpper(modification)
+
+	alter.Column = &sdc.Column{
+		Name: columnName,
+	}
+
+	switch {
+	case strings.HasPrefix(upperMod, "TYPE"):
+		alter.Action = "MODIFY DATATYPE"
+		typeRegex := regexp.MustCompile(`(?i)TYPE\s+([^\s(]+)(?:\s*\(([^)]+)\))?`)
+		typeMatches := typeRegex.FindStringSubmatch(modification)
+		if typeMatches != nil {
+			alter.Column.DataType = &sdc.DataType{
+				Name: typeMatches[1],
+			}
+			if len(typeMatches) > 2 && typeMatches[2] != "" {
+				alter.Column.DataType.Length = parseLength(typeMatches[2])
+			}
+		}
+	case strings.HasPrefix(upperMod, "SET DEFAULT"):
+		alter.Action = "SET DEFAULT"
+		defaultRegex := regexp.MustCompile(`(?i)SET\s+DEFAULT\s+(.+)`)
+		defaultMatches := defaultRegex.FindStringSubmatch(modification)
+		if defaultMatches != nil {
+			alter.Column.Default = defaultMatches[1]
+		}
+	case strings.HasPrefix(upperMod, "DROP DEFAULT"):
+		alter.Action = "DROP DEFAULT"
+	case strings.HasPrefix(upperMod, "SET NOT NULL"):
+		alter.Action = "SET NOT NULL"
+		alter.Column.Nullable = false
+	case strings.HasPrefix(upperMod, "DROP NOT NULL"):
+		alter.Action = "DROP NOT NULL"
+		alter.Column.Nullable = true
+	default:
+		return nil, fmt.Errorf("unsupported ALTER COLUMN modification: %s", modification)
+	}
+
+	return alter, nil
+}
+
+func (p *PostgresParser) parseRename(alter *sdc.AlterTable, action string) (*sdc.AlterTable, error) {
+	// RENAME patterns
+	renameTableRegex := regexp.MustCompile(`(?i)RENAME\s+TO\s+([^\s]+)`)
+	renameColumnRegex := regexp.MustCompile(`(?i)RENAME\s+(?:COLUMN\s+)?([^\s]+)\s+TO\s+([^\s]+)`)
+
+	// Check for RENAME COLUMN
+	if matches := renameColumnRegex.FindStringSubmatch(action); matches != nil {
+		alter.Action = "RENAME COLUMN"
+		alter.Column = &sdc.Column{
+			Name: strings.Trim(matches[1], "\""),
+		}
+		alter.NewName = strings.Trim(matches[2], "\"")
+		return alter, nil
+	}
+
+	// Check for RENAME TABLE
+	if matches := renameTableRegex.FindStringSubmatch(action); matches != nil {
+		alter.Action = "RENAME TABLE"
+		alter.NewName = strings.Trim(matches[1], "\"")
+		return alter, nil
+	}
+
+	return nil, fmt.Errorf("invalid RENAME syntax: %s", action)
+}
+
+func normalizeWhitespace(sql string) string {
+	// Replace multiple whitespace with single space
+	return strings.Join(strings.Fields(sql), " ")
+}
+
+func parseLength(length string) int {
+	if n, err := strconv.Atoi(length); err == nil {
+		return n
+	}
+	return 0
 }
 
 // ParseDropTable parses DROP TABLE statement
 func (p *PostgresParser) ParseDropTable(sql string) (*sdc.DropTable, error) {
-	// Parse logic to be implemented
-	return nil, nil
+	// Remove comments and normalize whitespace
+	sql = removeComments(sql)
+	sql = normalizeWhitespace(sql)
+
+	// Basic DROP TABLE pattern
+	dropTableRegex := regexp.MustCompile(`(?i)DROP\s+TABLE\s+(?:(IF\s+EXISTS)\s+)?(?:([^\s.]+)\.)?([^\s;]+)(?:\s+(CASCADE|RESTRICT))?`)
+	matches := dropTableRegex.FindStringSubmatch(sql)
+	if matches == nil {
+		return nil, fmt.Errorf("invalid DROP TABLE statement: %s", sql)
+	}
+
+	dropTable := &sdc.DropTable{
+		Schema:   strings.Trim(matches[2], "\""),
+		Table:    strings.Trim(matches[3], "\""),
+		IfExists: matches[1] != "",
+		Cascade:  strings.ToUpper(matches[4]) == "CASCADE",
+	}
+
+	return dropTable, nil
 }
 
 // ParseCreateIndex parses CREATE INDEX statement
 func (p *PostgresParser) ParseCreateIndex(sql string) (*sdc.Index, error) {
-	// Parse logic to be implemented
-	return nil, nil
+	// Remove comments and normalize whitespace
+	sql = removeComments(sql)
+	sql = normalizeWhitespace(sql)
+
+	// Basic CREATE INDEX pattern
+	createIndexRegex := regexp.MustCompile(`(?i)CREATE\s+(?:(UNIQUE)\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:([^\s.]+)\.)?([^\s]+)\s+ON\s+(?:([^\s.]+)\.)?([^\s(]+)\s*\(([^)]+)\)(?:\s+INCLUDE\s*\(([^)]+)\))?(?:\s+WITH\s*\(([^)]+)\))?(?:\s+TABLESPACE\s+([^\s;]+))?`)
+	matches := createIndexRegex.FindStringSubmatch(sql)
+	if matches == nil {
+		return nil, fmt.Errorf("invalid CREATE INDEX statement: %s", sql)
+	}
+
+	// Parse column list
+	columnList := strings.Split(matches[6], ",")
+	columns := make([]string, len(columnList))
+	for i, col := range columnList {
+		columns[i] = strings.Trim(strings.TrimSpace(col), "\"")
+	}
+
+	// Parse INCLUDE columns if present
+	var includeColumns []string
+	if matches[7] != "" {
+		includeList := strings.Split(matches[7], ",")
+		includeColumns = make([]string, len(includeList))
+		for i, col := range includeList {
+			includeColumns[i] = strings.Trim(strings.TrimSpace(col), "\"")
+		}
+	}
+
+	// Parse WITH options if present
+	var options map[string]string
+	if matches[8] != "" {
+		options = make(map[string]string)
+		optionsList := strings.Split(matches[8], ",")
+		for _, opt := range optionsList {
+			parts := strings.SplitN(strings.TrimSpace(opt), "=", 2)
+			if len(parts) == 2 {
+				options[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+			}
+		}
+	}
+
+	index := &sdc.Index{
+		Schema:         strings.Trim(matches[2], "\""),
+		Name:           strings.Trim(matches[3], "\""),
+		Table:          strings.Trim(matches[5], "\""),
+		Columns:        columns,
+		Unique:         matches[1] != "",
+		IncludeColumns: includeColumns,
+		Options:        options,
+	}
+
+	return index, nil
 }
 
 // ParseDropIndex parses DROP INDEX statement
 func (p *PostgresParser) ParseDropIndex(sql string) (*sdc.DropIndex, error) {
-	// Parse logic to be implemented
-	return nil, nil
+	// Remove comments and normalize whitespace
+	sql = removeComments(sql)
+	sql = normalizeWhitespace(sql)
+
+	// Basic DROP INDEX pattern
+	dropIndexRegex := regexp.MustCompile(`(?i)DROP\s+INDEX\s+(?:(IF\s+EXISTS)\s+)?(?:([^\s.]+)\.)?([^\s;]+)(?:\s+(CASCADE|RESTRICT))?`)
+	matches := dropIndexRegex.FindStringSubmatch(sql)
+	if matches == nil {
+		return nil, fmt.Errorf("invalid DROP INDEX statement: %s", sql)
+	}
+
+	dropIndex := &sdc.DropIndex{
+		Schema:   strings.Trim(matches[2], "\""),
+		Index:    strings.Trim(matches[3], "\""),
+		IfExists: matches[1] != "",
+		Cascade:  strings.ToUpper(matches[4]) == "CASCADE",
+	}
+
+	return dropIndex, nil
 }
 
 // ValidateIdentifier validates the identifier name
 func (p *PostgresParser) ValidateIdentifier(name string) error {
-	// Maksimum uzunluk kontrolü
+	// Check maximum length
 	if p.dbInfo.MaxIdentifierLength > 0 && len(name) > p.dbInfo.MaxIdentifierLength {
 		return fmt.Errorf("identifier '%s' exceeds maximum length of %d", name, p.dbInfo.MaxIdentifierLength)
 	}
 
-	// Ayrılmış kelime kontrolü
+	// Check for reserved words
 	for _, word := range p.dbInfo.ReservedWords {
 		if strings.ToUpper(name) == strings.ToUpper(word) {
 			return fmt.Errorf("identifier '%s' is a reserved word", name)

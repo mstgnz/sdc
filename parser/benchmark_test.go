@@ -1,7 +1,11 @@
 package parser
 
 import (
+	"context"
+	"fmt"
+	"strings"
 	"testing"
+	"time"
 )
 
 var sampleSQL = `
@@ -175,6 +179,142 @@ func BenchmarkPostgresParser_Parallel(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			_, err := parser.Parse(sampleSQL)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}
+
+func BenchmarkConverter_ConvertType(b *testing.B) {
+	converter := NewConverter()
+	converter.RegisterDefaultMappings()
+
+	sourceVer := &Version{Major: 5, Minor: 7}
+	targetVer := &Version{Major: 12}
+
+	benchmarks := []struct {
+		name       string
+		sourceType string
+		targetType string
+		value      interface{}
+	}{
+		{
+			name:       "Integer conversion",
+			sourceType: "int",
+			targetType: "integer",
+			value:      42,
+		},
+		{
+			name:       "String conversion",
+			sourceType: "varchar",
+			targetType: "character varying",
+			value:      "test string",
+		},
+		{
+			name:       "DateTime conversion",
+			sourceType: "datetime",
+			targetType: "timestamp",
+			value:      "2023-01-01 12:00:00",
+		},
+	}
+
+	for _, bm := range benchmarks {
+		b.Run(bm.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				_, err := converter.ConvertType(bm.value, bm.sourceType, bm.targetType, sourceVer, targetVer)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkStreamParser_Parse(b *testing.B) {
+	parser := NewStreamParser(StreamParserConfig{
+		Workers:    4,
+		BatchSize:  1024 * 1024,
+		BufferSize: 32 * 1024,
+	})
+
+	// Generate test SQL data
+	sql := `
+		CREATE TABLE users (
+			id INT PRIMARY KEY,
+			name VARCHAR(100),
+			email VARCHAR(255),
+			created_at DATETIME
+		);
+
+		INSERT INTO users VALUES (1, 'John Doe', 'john@example.com', '2023-01-01 12:00:00');
+		INSERT INTO users VALUES (2, 'Jane Doe', 'jane@example.com', '2023-01-01 12:00:00');
+		INSERT INTO users VALUES (3, 'Bob Smith', 'bob@example.com', '2023-01-01 12:00:00');
+	`
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		err := parser.ParseStream(context.Background(), strings.NewReader(sql), func(stmt *Statement) error {
+			return nil
+		})
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkBatchProcessor_Process(b *testing.B) {
+	processor := NewBatchProcessor(1000, 4)
+
+	// Generate test statements
+	stmts := make([]*Statement, 1000)
+	for i := range stmts {
+		stmts[i] = NewStatement(
+			"INSERT INTO users VALUES (?, ?, ?, ?)",
+			i,
+			fmt.Sprintf("User %d", i),
+			fmt.Sprintf("user%d@example.com", i),
+			time.Now(),
+		)
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		err := processor.ProcessBatch(context.Background(), stmts, func(stmt *Statement) error {
+			return nil
+		})
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkCharSetConversion(b *testing.B) {
+	converter := NewConverter()
+	converter.RegisterDefaultMappings()
+
+	text := "Hello, 世界! 🌍" // Mixed ASCII, Unicode, and Emoji
+
+	b.Run("UTF8MB4 Validation", func(b *testing.B) {
+		charset, err := converter.GetCharSet("utf8mb4")
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			if len(text) > charset.MaxLength*4 { // UTF8MB4 max 4 bytes per character
+				b.Fatal("text too long for charset")
+			}
+		}
+	})
+
+	b.Run("Charset Lookup", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_, err := converter.GetCharSet("utf8mb4")
 			if err != nil {
 				b.Fatal(err)
 			}
