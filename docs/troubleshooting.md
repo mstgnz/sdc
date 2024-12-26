@@ -8,6 +8,9 @@ This guide helps you diagnose and fix common issues you might encounter while us
 2. [Error Messages](#error-messages)
 3. [Performance Issues](#performance-issues)
 4. [Known Limitations](#known-limitations)
+5. [Database-Specific Issues](#database-specific-issues)
+6. [Security Issues](#security-issues)
+7. [Best Practices](#best-practices)
 
 ## Common Issues
 
@@ -20,15 +23,17 @@ error: failed to connect to database: connection refused
 
 **Possible causes:**
 - Database server is not running
-- Wrong connection credentials
+- Incorrect connection credentials
 - Firewall blocking the connection
 - Wrong port number
+- SSL/TLS configuration issues
 
 **Solutions:**
 1. Verify database server is running
-2. Check credentials in configuration
+2. Check connection credentials
 3. Check firewall settings
-4. Verify correct port number
+4. Verify port number
+5. Check SSL/TLS certificates
 
 ### Parsing Issues
 
@@ -41,11 +46,13 @@ error: failed to parse SQL: syntax error near 'TABLE'
 - Unsupported SQL syntax
 - Malformed SQL statement
 - Incorrect database dialect selected
+- Character encoding issues
 
 **Solutions:**
 1. Verify SQL syntax is supported
 2. Check SQL statement format
 3. Ensure correct parser is being used
+4. Check character encoding
 
 ### Migration Issues
 
@@ -58,86 +65,84 @@ error: failed to apply migration: table already exists
 - Migration already applied
 - Conflicting table names
 - Insufficient permissions
+- Data inconsistency
 
 **Solutions:**
 1. Check migration status
 2. Verify table names
 3. Check database permissions
+4. Verify data integrity
 
-## Error Messages
+## Database-Specific Issues
 
-### Connection Errors
-- `ConnectionError: connection refused`: Database server is unreachable
-- `ConnectionError: invalid credentials`: Wrong username or password
-- `ConnectionError: database not found`: Database does not exist
+### MySQL Issues
 
-### Parser Errors
-- `ParserError: unsupported syntax`: SQL syntax not supported
-- `ParserError: invalid type`: Data type not recognized
-- `ParserError: missing required field`: Required field not provided
+#### Problem: Character set mismatch
+```
+error: Incorrect string value: '\xF0\x9F\x98\x83' for column
+```
 
-### Migration Errors
-- `MigrationError: version conflict`: Migration version mismatch
-- `MigrationError: failed to rollback`: Rollback operation failed
-- `MigrationError: invalid state`: Migration in invalid state
+**Solution:**
+1. Set database and table character set to UTF8MB4
+2. Add `charset=utf8mb4` to connection URL
 
-## Performance Issues
+### PostgreSQL Issues
 
-### Slow Parsing
+#### Problem: SSL connection error
+```
+error: SSL is not enabled on the server
+```
 
-**Symptoms:**
-- Long processing times for SQL files
-- High memory usage
+**Solution:**
+1. Set `ssl = on` in postgresql.conf
+2. Place SSL certificates in correct location
 
-**Solutions:**
-1. Break large SQL files into smaller chunks
-2. Use streaming parser for large files
-3. Optimize memory settings
+## Security Issues
 
-### Memory Usage
+### SSL/TLS Configuration
 
-**Symptoms:**
-- Out of memory errors
-- High memory consumption
+#### Problem: Insecure connection
+```
+error: server does not support SSL, but SSL was required
+```
 
-**Solutions:**
-1. Enable garbage collection
-2. Use batch processing
-3. Implement pagination
+**Solution:**
+1. Configure SSL certificates
+2. Set SSL mode in connection string
+3. Verify certificate paths
 
-## Known Limitations
+### Authorization Issues
 
-### SQL Support
-- Complex stored procedures not supported
-- Limited support for vendor-specific features
-- Some advanced index types not supported
+#### Problem: Insufficient permissions
+```
+error: permission denied for table users
+```
 
-### Data Types
-- Custom data types require manual mapping
-- Some complex types may lose precision
-- BLOB/CLOB size limitations
-
-### Performance
-- Large file processing may be slow
-- Memory usage scales with file size
-- Concurrent operations may be limited
+**Solution:**
+1. Adjust user permissions with GRANT commands
+2. Implement Role-based access control (RBAC)
 
 ## Best Practices
 
-1. **Testing**
-   - Always test conversions in development first
-   - Use small datasets for initial testing
-   - Maintain test coverage for custom conversions
+### 1. Migration Management
+- Break migrations into smaller chunks
+- Create rollback plan for each migration
+- Automate migration testing
 
-2. **Backup**
-   - Always backup database before migrations
-   - Keep SQL dumps of original schema
-   - Document all custom configurations
+### 2. Performance Optimization
+- Use appropriate indexes
+- Partition large tables
+- Optimize queries
 
-3. **Monitoring**
-   - Enable logging for troubleshooting
-   - Monitor memory usage
-   - Track conversion times
+### 3. Security
+- Encrypt sensitive data
+- Perform regular security audits
+- Maintain access logs
+
+### 4. Backup
+- Create regular backup schedule
+- Test backups
+- Store backups in different locations
 
 ## Getting Help
 
@@ -149,4 +154,16 @@ If you encounter issues not covered in this guide:
    - Error message
    - Steps to reproduce
    - Environment details
-   - Sample code 
+   - Sample code
+
+## Version Migration Issues
+
+### Version Upgrade
+- Check changelog (CHANGELOG)
+- Test upgrade in staging environment
+- Backup before upgrade
+
+### Version Downgrade
+- Check backward compatibility
+- Review data structure changes
+- Review dependencies 
