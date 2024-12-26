@@ -1,14 +1,15 @@
 package parser
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
-	"regexp"
-	"strconv"
 	"strings"
 	"unicode"
-
-	"github.com/mstgnz/sdc"
 )
+
+// DatabaseType represents the type of database
+type DatabaseType string
 
 // SecurityLevel represents the security level for parsing and validation
 type SecurityLevel int
@@ -49,6 +50,65 @@ func DefaultSecurityOptions() SecurityOptions {
 	}
 }
 
+const (
+	MySQL      DatabaseType = "mysql"
+	PostgreSQL DatabaseType = "postgresql"
+	SQLServer  DatabaseType = "sqlserver"
+	Oracle     DatabaseType = "oracle"
+	SQLite     DatabaseType = "sqlite"
+)
+
+// DatabaseInfoMap contains database information for each supported database type
+var DatabaseInfoMap = map[DatabaseType]DatabaseInfo{
+	MySQL: {
+		DefaultSchema:       "",
+		IdentifierQuote:     "`",
+		StringQuote:         "'",
+		MaxIdentifierLength: 64,
+	},
+	PostgreSQL: {
+		DefaultSchema:       "public",
+		IdentifierQuote:     "\"",
+		StringQuote:         "'",
+		MaxIdentifierLength: 63,
+	},
+	SQLServer: {
+		DefaultSchema:       "dbo",
+		IdentifierQuote:     "\"",
+		StringQuote:         "'",
+		MaxIdentifierLength: 128,
+	},
+	Oracle: {
+		DefaultSchema:       "",
+		IdentifierQuote:     "\"",
+		StringQuote:         "'",
+		MaxIdentifierLength: 30,
+	},
+	SQLite: {
+		DefaultSchema:       "main",
+		IdentifierQuote:     "\"",
+		StringQuote:         "'",
+		MaxIdentifierLength: 0,
+	},
+}
+
+// sanitizeString removes potentially dangerous characters from a string
+func sanitizeString(s string) string {
+	dangerous := []string{"'", "\"", ";", "--", "/*", "*/", "@@", "@"}
+	result := s
+	for _, ch := range dangerous {
+		result = strings.ReplaceAll(result, ch, "")
+	}
+	return result
+}
+
+// logSensitiveData logs potentially sensitive data if logging is enabled
+func logSensitiveData(data string, options SecurityOptions) {
+	if options.LogSensitiveData {
+		fmt.Printf("Warning: Potentially sensitive data found: %s\n", data)
+	}
+}
+
 // validateIdentifierSafety checks if an identifier is safe to use
 func validateIdentifierSafety(name string, options SecurityOptions) error {
 	if name == "" {
@@ -57,20 +117,6 @@ func validateIdentifierSafety(name string, options SecurityOptions) error {
 
 	if len(name) > options.MaxIdentifierLength {
 		return fmt.Errorf("identifier '%s' exceeds maximum length of %d", name, options.MaxIdentifierLength)
-	}
-
-	// Check for SQL injection patterns
-	dangerousPatterns := []string{
-		"--", "/*", "*/", "@@", "@",
-		"EXEC", "EXECUTE", "SP_", "XP_",
-		"WAITFOR", "DELAY", "SHUTDOWN",
-	}
-
-	upperName := strings.ToUpper(name)
-	for _, pattern := range dangerousPatterns {
-		if strings.Contains(upperName, pattern) {
-			return fmt.Errorf("identifier '%s' contains dangerous pattern: %s", name, pattern)
-		}
 	}
 
 	// Check for disallowed keywords
@@ -133,230 +179,112 @@ func validateQuerySafety(sql string, options SecurityOptions) error {
 		}
 	}
 
-	// Check for disallowed keywords based on security level
-	if options.Level >= SecurityLevelHigh {
-		for _, keyword := range options.DisallowedKeywords {
-			pattern := fmt.Sprintf(`\b%s\b`, keyword)
-			if matched, _ := regexp.MatchString(pattern, upperSQL); matched {
-				return fmt.Errorf("SQL query contains disallowed keyword: %s", keyword)
-			}
-		}
-	}
-
 	return nil
 }
 
-// sanitizeString removes potentially dangerous characters from a string
-func sanitizeString(s string) string {
-	// Remove common SQL injection characters
-	dangerous := []string{"'", "\"", ";", "--", "/*", "*/", "@@", "@"}
-	result := s
-
-	for _, ch := range dangerous {
-		result = strings.ReplaceAll(result, ch, "")
-	}
-
-	return result
-}
-
-// logSensitiveData logs sensitive data based on security options
-func logSensitiveData(data string, options SecurityOptions) {
-	if !options.LogSensitiveData {
-		// Mask sensitive data
-		maskedData := maskSensitiveData(data)
-		fmt.Printf("Masked sensitive data: %s\n", maskedData)
-		return
-	}
-
-	fmt.Printf("Original data: %s\n", data)
-}
-
-// maskSensitiveData masks sensitive information in a string
-func maskSensitiveData(data string) string {
-	// Mask common sensitive patterns
-	patterns := map[string]*regexp.Regexp{
-		"EMAIL":    regexp.MustCompile(`\b[\w\.-]+@[\w\.-]+\.\w+\b`),
-		"PASSWORD": regexp.MustCompile(`(?i)password\s*=\s*[^\s;]+`),
-		"API_KEY":  regexp.MustCompile(`(?i)(api[_-]?key|access[_-]?key|secret[_-]?key)\s*=\s*[^\s;]+`),
-		"TOKEN":    regexp.MustCompile(`(?i)(token|jwt|bearer)\s*=\s*[^\s;]+`),
-	}
-
-	result := data
-	for name, pattern := range patterns {
-		result = pattern.ReplaceAllString(result, fmt.Sprintf("[MASKED_%s]", name))
-	}
-
-	return result
-}
-
-// DatabaseType represents the type of database
-type DatabaseType string
-
-const (
-	// MySQL database type
-	MySQL DatabaseType = "mysql"
-	// PostgreSQL database type
-	PostgreSQL DatabaseType = "postgresql"
-	// SQLServer database type
-	SQLServer DatabaseType = "sqlserver"
-	// Oracle database type
-	Oracle DatabaseType = "oracle"
-	// SQLite database type
-	SQLite DatabaseType = "sqlite"
-)
-
-// DatabaseInfo contains database-specific information and limitations
+// DatabaseInfo holds database-specific information
 type DatabaseInfo struct {
-	Type                 DatabaseType
-	DefaultSchema        string
-	SchemaPrefix         string
-	IdentifierQuote      string
-	StringQuote          string
-	MaxIdentifierLength  int
-	ReservedWords        []string
-	MaxTables            int // 0 means unlimited
-	MaxColumns           int
-	MaxIndexes           int // 0 means unlimited
-	MaxForeignKeys       int // 0 means unlimited
-	DefaultCharset       string
-	DefaultCollation     string
-	MaxPartitions        int // 0 means unlimited
-	MaxTriggers          int // 0 means unlimited
-	MaxViews             int // 0 means unlimited
-	MaxStoredProcedures  int // 0 means unlimited
-	MaxFunctions         int // 0 means unlimited
-	MaxSequences         int // 0 means unlimited
-	MaxMaterializedViews int // 0 means unlimited or not supported
+	DefaultSchema       string
+	IdentifierQuote     string
+	StringQuote         string
+	MaxIdentifierLength int
+	ReservedWords       []string
 }
 
-// DatabaseInfoMap contains database information for each supported database type
-var DatabaseInfoMap = map[DatabaseType]DatabaseInfo{
-	MySQL: {
-		Type:                 MySQL,
-		DefaultSchema:        "",
-		SchemaPrefix:         "",
-		IdentifierQuote:      "`",
-		StringQuote:          "'",
-		MaxIdentifierLength:  64,
-		MaxTables:            4096,
-		MaxColumns:           4096,
-		MaxIndexes:           64,
-		MaxForeignKeys:       64,
-		DefaultCharset:       "utf8mb4",
-		DefaultCollation:     "utf8mb4_unicode_ci",
-		MaxPartitions:        8192,
-		MaxTriggers:          0, // Unlimited
-		MaxViews:             0, // Unlimited
-		MaxStoredProcedures:  0, // Unlimited
-		MaxFunctions:         0, // Unlimited
-		MaxSequences:         0, // Not supported
-		MaxMaterializedViews: 0, // Not supported
-	},
-	PostgreSQL: {
-		Type:                 PostgreSQL,
-		DefaultSchema:        "public",
-		SchemaPrefix:         "",
-		IdentifierQuote:      "\"",
-		StringQuote:          "'",
-		MaxIdentifierLength:  63,
-		MaxTables:            0, // Unlimited
-		MaxColumns:           1600,
-		MaxIndexes:           0, // Unlimited
-		MaxForeignKeys:       0, // Unlimited
-		DefaultCharset:       "UTF8",
-		DefaultCollation:     "en_US.UTF-8",
-		MaxPartitions:        0, // Unlimited
-		MaxTriggers:          0, // Unlimited
-		MaxViews:             0, // Unlimited
-		MaxStoredProcedures:  0, // Unlimited
-		MaxFunctions:         0, // Unlimited
-		MaxSequences:         0, // Unlimited
-		MaxMaterializedViews: 0, // Unlimited
-	},
-	SQLServer: {
-		Type:                 SQLServer,
-		DefaultSchema:        "dbo",
-		SchemaPrefix:         "",
-		IdentifierQuote:      "\"",
-		StringQuote:          "'",
-		MaxIdentifierLength:  128,
-		MaxTables:            0, // Unlimited
-		MaxColumns:           1024,
-		MaxIndexes:           999,
-		MaxForeignKeys:       253,
-		DefaultCharset:       "UTF-8",
-		DefaultCollation:     "SQL_Latin1_General_CP1_CI_AS",
-		MaxPartitions:        15000,
-		MaxTriggers:          0, // Unlimited
-		MaxViews:             0, // Unlimited
-		MaxStoredProcedures:  0, // Unlimited
-		MaxFunctions:         0, // Unlimited
-		MaxSequences:         0, // Unlimited
-		MaxMaterializedViews: 0, // Not supported
-	},
-	Oracle: {
-		Type:                 Oracle,
-		DefaultSchema:        "",
-		SchemaPrefix:         "",
-		IdentifierQuote:      "\"",
-		StringQuote:          "'",
-		MaxIdentifierLength:  30,
-		MaxTables:            0, // Unlimited
-		MaxColumns:           1000,
-		MaxIndexes:           0, // Unlimited
-		MaxForeignKeys:       0, // Unlimited
-		DefaultCharset:       "AL32UTF8",
-		DefaultCollation:     "USING_NLS_COMP",
-		MaxPartitions:        1024000,
-		MaxTriggers:          0, // Unlimited
-		MaxViews:             0, // Unlimited
-		MaxStoredProcedures:  0, // Unlimited
-		MaxFunctions:         0, // Unlimited
-		MaxSequences:         0, // Unlimited
-		MaxMaterializedViews: 0, // Unlimited
-	},
-	SQLite: {
-		Type:                 SQLite,
-		DefaultSchema:        "main",
-		SchemaPrefix:         "",
-		IdentifierQuote:      "\"",
-		StringQuote:          "'",
-		MaxIdentifierLength:  0, // No limit
-		MaxTables:            0, // Unlimited
-		MaxColumns:           2000,
-		MaxIndexes:           0, // Unlimited
-		MaxForeignKeys:       0, // Unlimited
-		DefaultCharset:       "UTF-8",
-		DefaultCollation:     "BINARY",
-		MaxPartitions:        0, // Not supported
-		MaxTriggers:          0, // Unlimited
-		MaxViews:             0, // Unlimited
-		MaxStoredProcedures:  0, // Not supported
-		MaxFunctions:         0, // Not supported
-		MaxSequences:         0, // Not supported
-		MaxMaterializedViews: 0, // Not supported
-	},
+// Entity represents a database entity
+type Entity struct {
+	Tables []*Table
 }
 
-// Parser interface defines the methods that must be implemented by all database parsers
+// Table represents a database table
+type Table struct {
+	Schema      string
+	Name        string
+	Columns     []*Column
+	Constraints []*Constraint
+	PrimaryKey  *Constraint
+	ForeignKeys []*Constraint
+}
+
+// Column represents a table column
+type Column struct {
+	Name          string
+	DataType      *DataType
+	IsNullable    bool
+	Nullable      bool
+	Default       string
+	AutoIncrement bool
+	PrimaryKey    bool
+	Unique        bool
+	Collation     string
+}
+
+// Constraint represents a table constraint
+type Constraint struct {
+	Name       string
+	Type       string
+	Columns    []string
+	RefTable   string
+	RefColumns []string
+	OnDelete   string
+	OnUpdate   string
+}
+
+// Parser interface for SQL parsing and conversion
 type Parser interface {
-	// Parse converts SQL dump to Table structure with security validation
-	Parse(sql string, options SecurityOptions) (*sdc.Table, error)
-	// Convert transforms Table structure to target database format
-	Convert(table *sdc.Table, options SecurityOptions) (string, error)
-	// ValidateSchema validates the schema structure with security checks
-	ValidateSchema(table *sdc.Table, options SecurityOptions) error
+	Parse(sql string) (*Entity, error)
+	Convert(entity *Entity) (string, error)
+	ValidateIdentifier(name string) error
+	EscapeIdentifier(name string) string
+	EscapeString(value string) string
+	GetDefaultSchema() string
+	GetSchemaPrefix(schema string) string
+	GetIdentifierQuote() string
+	GetStringQuote() string
+	GetMaxIdentifierLength() int
+	GetReservedWords() []string
 }
 
-// parseNumber safely parses a string to an integer
-func parseNumber(s string) (int, error) {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return 0, nil
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil {
-		return 0, err
-	}
-	return n, nil
+// QueryExecutor basic query operations interface
+type QueryExecutor interface {
+	Execute(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+	Query(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
+	QueryRow(ctx context.Context, query string, args ...interface{}) *sql.Row
+}
+
+// TransactionManager transaction operations interface
+type TransactionManager interface {
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+	Commit(ctx context.Context) error
+	Rollback(ctx context.Context) error
+}
+
+// ConnectionManager connection management interface
+type ConnectionManager interface {
+	Connect(ctx context.Context) error
+	Disconnect(ctx context.Context) error
+	IsConnected() bool
+}
+
+// SchemaManager schema management interface
+type SchemaManager interface {
+	CreateTable(ctx context.Context, table string) error
+	DropTable(ctx context.Context, table string) error
+	AlterTable(ctx context.Context, table string, alterations []string) error
+}
+
+// MigrationManager migration operations interface
+type MigrationManager interface {
+	ApplyMigrations(ctx context.Context) error
+	RollbackMigration(ctx context.Context) error
+	GetMigrationStatus(ctx context.Context) ([]MigrationStatus, error)
+}
+
+// MigrationStatus migration status struct
+type MigrationStatus struct {
+	ID        string
+	Name      string
+	Version   string
+	AppliedAt string
+	Status    string
 }

@@ -16,55 +16,23 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	// Initialize memory optimizer
-	memOptimizer := parser.NewMemoryOptimizer(1024, 0.8) // 1GB max memory, 80% GC threshold
-	go memOptimizer.MonitorMemory(ctx)
-
-	// Create worker pool
+	// Initialize worker pool
 	wp := parser.NewWorkerPool(parser.WorkerConfig{
-		Workers:      4,
-		QueueSize:    1000,
-		MemOptimizer: memOptimizer,
-		ErrHandler: func(err error) {
-			log.Printf("Worker error: %v", err)
-		},
+		Workers:   4,
+		QueueSize: 1000,
 	})
 
 	// Start worker pool
 	wp.Start(ctx)
 	defer wp.Stop()
 
-	// Create batch processor
-	bp := parser.NewBatchProcessor(parser.BatchConfig{
-		BatchSize:    100,
-		Workers:      4,
-		Timeout:      30 * time.Second,
-		MemOptimizer: memOptimizer,
-		ErrorHandler: func(err error) {
-			log.Printf("Batch error: %v", err)
-		},
-	})
-
 	// Process SQL files in examples/files directory
-	if err := processFiles(ctx, "examples/files", wp, bp); err != nil {
+	if err := processFiles(ctx, "examples/files", wp); err != nil {
 		log.Fatalf("Failed to process files: %v", err)
 	}
-
-	// Wait for all tasks to complete
-	if err := wp.WaitForTasks(ctx); err != nil {
-		log.Printf("Error waiting for tasks: %v", err)
-	}
-
-	// Print metrics
-	metrics := wp.GetMetrics()
-	fmt.Printf("\nWorker Pool Metrics:\n")
-	fmt.Printf("Active Workers: %d\n", metrics.ActiveWorkers)
-	fmt.Printf("Completed Tasks: %d\n", metrics.CompletedTasks)
-	fmt.Printf("Failed Tasks: %d\n", metrics.FailedTasks)
-	fmt.Printf("Average Latency: %v\n", metrics.AverageLatency)
 }
 
-func processFiles(ctx context.Context, dir string, wp *parser.WorkerPool, bp *parser.BatchProcessor) error {
+func processFiles(_ context.Context, dir string, wp *parser.WorkerPool) error {
 	// Walk through directory
 	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {

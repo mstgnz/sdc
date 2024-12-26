@@ -3,10 +3,20 @@ package parser
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/mstgnz/sdc"
 )
+
+// parseNumber safely parses a string to an integer
+func parseNumber(s string) (int, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, nil
+	}
+	return strconv.Atoi(s)
+}
 
 var (
 	// Pre-compiled regular expressions for better performance

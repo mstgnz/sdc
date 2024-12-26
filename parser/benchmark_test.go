@@ -255,9 +255,7 @@ func BenchmarkStreamParser_Parse(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		err := parser.ParseStream(context.Background(), strings.NewReader(sql), func(stmt *Statement) error {
-			return nil
-		})
+		err := parser.ParseStream(context.Background(), strings.NewReader(sql))
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -265,7 +263,10 @@ func BenchmarkStreamParser_Parse(b *testing.B) {
 }
 
 func BenchmarkBatchProcessor_Process(b *testing.B) {
-	processor := NewBatchProcessor(1000, 4)
+	processor := NewBatchProcessor(BatchConfig{
+		BatchSize: 1000,
+		Workers:   4,
+	})
 
 	// Generate test statements
 	stmts := make([]*Statement, 1000)

@@ -246,10 +246,17 @@ func (wp *WorkerPool) updateMetrics(result Result) {
 }
 
 // GetMetrics returns current worker pool metrics
-func (wp *WorkerPool) GetMetrics() WorkerMetrics {
+func (wp *WorkerPool) GetMetrics() *WorkerMetrics {
 	wp.metrics.mu.RLock()
 	defer wp.metrics.mu.RUnlock()
-	return *wp.metrics
+	return &WorkerMetrics{
+		ActiveWorkers:   wp.metrics.ActiveWorkers,
+		CompletedTasks:  wp.metrics.CompletedTasks,
+		FailedTasks:     wp.metrics.FailedTasks,
+		AverageLatency:  wp.metrics.AverageLatency,
+		ProcessingTasks: wp.metrics.ProcessingTasks,
+		QueueLength:     wp.metrics.QueueLength,
+	}
 }
 
 // WaitForTasks waits for all submitted tasks to complete

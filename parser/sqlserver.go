@@ -42,9 +42,9 @@ func (p *SQLServerParser) SetSecurityOptions(options SecurityOptions) {
 }
 
 // Parse converts SQL Server dump to Entity structure with security validation
-func (p *SQLServerParser) Parse(sql string, options SecurityOptions) (*sdc.Entity, error) {
+func (p *SQLServerParser) Parse(sql string) (*sdc.Entity, error) {
 	// Validate query safety
-	if err := validateQuerySafety(sql, options); err != nil {
+	if err := validateQuerySafety(sql, p.securityOptions); err != nil {
 		return nil, fmt.Errorf("security validation failed: %v", err)
 	}
 
@@ -72,7 +72,7 @@ func (p *SQLServerParser) Parse(sql string, options SecurityOptions) (*sdc.Entit
 			}
 
 			// Validate schema and identifiers
-			if err := p.ValidateSchema(table, options); err != nil {
+			if err := p.ValidateSchema(table, p.securityOptions); err != nil {
 				return nil, fmt.Errorf("schema validation failed: %v", err)
 			}
 
