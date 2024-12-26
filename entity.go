@@ -121,6 +121,9 @@ type Table struct {
 	Unlogged    bool              // Whether this is an unlogged table
 	Temporary   bool              // Whether this is a temporary table
 	IfNotExists bool              // Whether to use IF NOT EXISTS clause
+	PrimaryKey  *Constraint       // Primary key constraint
+	ForeignKeys []*ForeignKey     // List of foreign key constraints
+	TableSpace  string            // TableSpace name
 }
 
 // Partition represents table partitioning information.
