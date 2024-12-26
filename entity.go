@@ -213,7 +213,7 @@ type Column struct {
 	IdentityIncr  int64       // Identity increment value
 	FileStream    bool        // Whether this is a FileStream column
 	FileGroup     string      // FileGroup for the column
-	RowGuidCol    bool        // Whether this is a rowguid column
+	RowGUIDCol    bool        // Whether this is a rowguid column
 	Persisted     bool        // Whether computed column is persisted
 	Extra         string      // Additional column attributes (parser compatibility)
 }
