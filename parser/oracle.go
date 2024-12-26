@@ -3,10 +3,15 @@ package parser
 import (
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/mstgnz/sdc"
+)
+
+var (
+	// Pre-compiled regular expressions for better performance
+	oracleColumnRegex  = regexp.MustCompile(`(?i)^\s*"?([^"\s(]+)"?\s+([^(,\s]+)(?:\s*\(([^)]+)\))?\s*(.*)$`)
+	oracleDefaultRegex = regexp.MustCompile(`(?i)DEFAULT\s+([^,\s]+|'[^']*'|"[^"]*")`)
 )
 
 // OracleParser implements the parser for Oracle database
@@ -291,62 +296,66 @@ func (p *OracleParser) parseCreateTable(sql string) (*sdc.Table, error) {
 	return table, nil
 }
 
-// parseColumn parses column definition
+// parseColumn parses column definition with optimized string handling
 func (p *OracleParser) parseColumn(columnDef string) *sdc.Column {
-	column := &sdc.Column{}
-
-	// Split column name and data type
-	parts := strings.Fields(columnDef)
-	if len(parts) < 2 {
+	matches := oracleColumnRegex.FindStringSubmatch(columnDef)
+	if len(matches) < 3 {
 		return nil
 	}
 
-	// Handle quoted identifiers
-	if strings.HasPrefix(parts[0], "\"") && strings.HasSuffix(parts[0], "\"") {
-		column.Name = parts[0][1 : len(parts[0])-1]
-	} else {
-		column.Name = parts[0]
+	column := &sdc.Column{
+		Name:       strings.Trim(matches[1], "\""),
+		IsNullable: true, // Default to nullable
+		Nullable:   true,
 	}
 
-	// Parse data type and length/scale information
-	dataTypeRegex := regexp.MustCompile(`(?i)(\w+(?:\s+\w+)?)\s*(?:\(([^)]+)\))?`)
-	dataTypeMatches := dataTypeRegex.FindStringSubmatch(parts[1])
+	// Parse data type
+	dataType := &sdc.DataType{
+		Name: matches[2],
+	}
 
-	if len(dataTypeMatches) > 1 {
-		dataType := &sdc.DataType{
-			Name: strings.ToUpper(dataTypeMatches[1]),
-		}
-
-		// Parse length and scale information
-		if len(dataTypeMatches) > 2 && dataTypeMatches[2] != "" {
-			precisionScale := strings.Split(dataTypeMatches[2], ",")
-			if len(precisionScale) > 0 {
-				if strings.Contains(dataType.Name, "NUMBER") || strings.Contains(dataType.Name, "DECIMAL") {
-					dataType.Precision, _ = strconv.Atoi(strings.TrimSpace(precisionScale[0]))
-					if len(precisionScale) > 1 {
-						dataType.Scale, _ = strconv.Atoi(strings.TrimSpace(precisionScale[1]))
-					}
-				} else {
-					dataType.Length, _ = strconv.Atoi(strings.TrimSpace(precisionScale[0]))
+	// Parse length/precision/scale
+	if matches[3] != "" {
+		parts := strings.Split(matches[3], ",")
+		if len(parts) > 0 {
+			if dataType.Name == "NUMBER" {
+				dataType.Precision, _ = parseNumber(parts[0])
+				if len(parts) > 1 {
+					dataType.Scale, _ = parseNumber(parts[1])
 				}
+			} else {
+				dataType.Length, _ = parseNumber(parts[0])
 			}
 		}
-
-		column.DataType = dataType
 	}
 
-	// Check for NOT NULL constraint
-	if strings.Contains(strings.ToUpper(columnDef), "NOT NULL") {
-		column.IsNullable = false
-	} else {
-		column.IsNullable = true
-	}
+	column.DataType = dataType
 
-	// Check for DEFAULT value
-	defaultRegex := regexp.MustCompile(`(?i)DEFAULT\s+([^,\s]+)`)
-	defaultMatches := defaultRegex.FindStringSubmatch(columnDef)
-	if len(defaultMatches) > 1 {
-		column.Default = defaultMatches[1]
+	// Parse additional properties
+	rest := matches[4]
+	if rest != "" {
+		// Check for DEFAULT
+		if defaultMatches := oracleDefaultRegex.FindStringSubmatch(rest); defaultMatches != nil {
+			column.Default = defaultMatches[1]
+		}
+
+		// Check for NOT NULL
+		if strings.Contains(strings.ToUpper(rest), "NOT NULL") {
+			column.IsNullable = false
+			column.Nullable = false
+		}
+
+		// Check for PRIMARY KEY
+		if strings.Contains(strings.ToUpper(rest), "PRIMARY KEY") {
+			column.PrimaryKey = true
+			column.IsNullable = false
+			column.Nullable = false
+		}
+
+		// Check for UNIQUE
+		if strings.Contains(strings.ToUpper(rest), "UNIQUE") {
+			column.Unique = true
+		}
 	}
 
 	return column
