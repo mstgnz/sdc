@@ -8,212 +8,77 @@ import (
 	"github.com/mstgnz/sdc"
 )
 
+// Precompiled regex patterns for better performance
+var (
+	sqlServerCreateTableRegex = regexp.MustCompile(`(?i)CREATE\s+TABLE\s+(?:\[?([^\]\.]+)\]?\.)?(?:\[?([^\]\s(]+)\]?)\s*\((.*)\)(?:\s+ON\s+\[?([^\]]+)\]?)?`)
+	sqlServerColumnRegex      = regexp.MustCompile(`(?i)\[?([^\]]+)\]?\s+([^\s]+)(?:\s*\(([^)]+)\))?(.*)`)
+	sqlServerIdentityRegex    = regexp.MustCompile(`(?i)IDENTITY(?:\s*\((\d+)\s*,\s*(\d+)\s*\))?`)
+	sqlServerDefaultRegex     = regexp.MustCompile(`(?i)DEFAULT\s+([^,\s]+|'[^']*'|\([^)]+\))`)
+	sqlserverColumnRegex      = regexp.MustCompile(`(?i)^\s*\[?([^\[\]\s(]+)\]?\s+([^(,\s]+)(?:\s*\(([^)]+)\))?\s*(.*)$`)
+	sqlserverDefaultRegex     = regexp.MustCompile(`(?i)DEFAULT\s+([^,\s]+|'[^']*'|"[^"]*")`)
+	sqlserverCollateRegex     = regexp.MustCompile(`(?i)COLLATE\s+([^\s,]+)`)
+)
+
 // SQLServerParser implements the parser for SQL Server database
 type SQLServerParser struct {
-	dbInfo       DatabaseInfo
-	currentTable *sdc.Table // Geçerli işlenen tablo
-}
-
-// NewSQLServerParser creates a new SQL Server parser
-func NewSQLServerParser() *SQLServerParser {
-	return &SQLServerParser{
-		dbInfo: DatabaseInfoMap[SQLServer],
-	}
+	dbInfo DatabaseInfo
+	// Add buffer pool for string builders to reduce allocations
+	builderPool strings.Builder
 }
 
 // Parse converts SQL Server dump to Entity structure
 func (p *SQLServerParser) Parse(sql string) (*sdc.Entity, error) {
-	entity := &sdc.Entity{}
+	entity := &sdc.Entity{
+		Tables: make([]*sdc.Table, 0), // Pre-allocate slice
+	}
 
-	// Find CREATE TABLE statements
-	createTableRegex := regexp.MustCompile(`(?i)CREATE\s+TABLE\s+(?:\[([^\]]+)\]|\[?(\w+)\]?)\s*\((.*?)\)(?:\s+ON\s+\[?(\w+)\]?)?(?:\s+TEXTIMAGE_ON\s+\[?(\w+)\]?)?`)
-	matches := createTableRegex.FindStringSubmatch(sql)
+	// Remove comments and normalize whitespace once
+	sql = removeComments(sql)
+	sql = strings.TrimSpace(sql)
 
-	if len(matches) > 0 {
-		table, err := p.parseCreateTable(sql)
-		if err != nil {
-			return nil, err
+	// Split SQL statements efficiently
+	statements := strings.Split(sql, ";")
+	for _, stmt := range statements {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" {
+			continue
 		}
-		entity.Tables = append(entity.Tables, table)
+
+		// Process CREATE TABLE statements
+		if strings.HasPrefix(strings.ToUpper(stmt), "CREATE TABLE") {
+			table, err := p.parseCreateTable(stmt)
+			if err != nil {
+				return nil, err
+			}
+			entity.Tables = append(entity.Tables, table)
+		}
 	}
 
 	return entity, nil
 }
 
-// parseCreateTable parses CREATE TABLE statement
-func (p *SQLServerParser) parseCreateTable(sql string) (*sdc.Table, error) {
-	table := &sdc.Table{}
-
-	// Extract basic table information
-	tableRegex := regexp.MustCompile(`(?i)CREATE\s+TABLE\s+(?:\[([^\]]+)\]|\[?(\w+)\]?)\s*\((.*?)\)(?:\s+ON\s+\[?(\w+)\]?)?(?:\s+TEXTIMAGE_ON\s+\[?(\w+)\]?)?`)
-	matches := tableRegex.FindStringSubmatch(sql)
-
-	if len(matches) < 2 {
-		return nil, fmt.Errorf("invalid CREATE TABLE statement")
-	}
-
-	// Set table name
-	table.Name = matches[1]
-
-	// Parse column definitions
-	columnDefs := strings.Split(matches[2], ",")
-	var comments []string
-
-	for _, columnDef := range columnDefs {
-		columnDef = strings.TrimSpace(columnDef)
-		if columnDef == "" {
-			continue
-		}
-
-		// Check for constraints
-		if strings.HasPrefix(strings.ToUpper(columnDef), "CONSTRAINT") ||
-			strings.HasPrefix(strings.ToUpper(columnDef), "PRIMARY KEY") ||
-			strings.HasPrefix(strings.ToUpper(columnDef), "FOREIGN KEY") ||
-			strings.HasPrefix(strings.ToUpper(columnDef), "UNIQUE") {
-			comments = append(comments, columnDef)
-			continue
-		}
-
-		// Check for CHECK constraints
-		if strings.HasPrefix(strings.ToUpper(columnDef), "CHECK") {
-			checkRegex := regexp.MustCompile(`(?i)CHECK\s*\((.*?)\)`)
-			checkMatches := checkRegex.FindStringSubmatch(columnDef)
-			if len(checkMatches) > 1 {
-				comments = append(comments, fmt.Sprintf("CHECK (%s)", checkMatches[1]))
-			}
-			continue
-		}
-
-		// Parse column definition
-		column := p.parseColumn(columnDef)
-		if column != nil {
-			table.Columns = append(table.Columns, column)
-		}
-	}
-
-	// Set FileGroup if specified
-	if len(matches) > 4 && matches[4] != "" {
-		table.FileGroup = matches[4]
-	}
-
-	if len(comments) > 0 {
-		table.Comment = strings.Join(comments, ", ")
-	}
-
-	return table, nil
-}
-
-// parseColumn parses column definition
-func (p *SQLServerParser) parseColumn(columnDef string) *sdc.Column {
-	column := &sdc.Column{}
-
-	// Split column name and data type
-	parts := strings.Fields(columnDef)
-	if len(parts) < 2 {
-		return nil
-	}
-
-	column.Name = parts[0]
-
-	// Parse data type and length/scale information
-	dataTypeRegex := regexp.MustCompile(`(?i)(\w+(?:\s+\w+)?)\s*(?:\(([^)]+)\))?`)
-	dataTypeMatches := dataTypeRegex.FindStringSubmatch(parts[1])
-
-	if len(dataTypeMatches) > 1 {
-		dataType := &sdc.DataType{
-			Name: strings.ToUpper(dataTypeMatches[1]),
-		}
-
-		// Parse length and scale information
-		if len(dataTypeMatches) > 2 && dataTypeMatches[2] != "" {
-			precisionScale := strings.Split(dataTypeMatches[2], ",")
-			if len(precisionScale) > 0 {
-				if strings.Contains(dataType.Name, "DECIMAL") || strings.Contains(dataType.Name, "NUMERIC") {
-					dataType.Precision = parseInt(precisionScale[0])
-					if len(precisionScale) > 1 {
-						dataType.Scale = parseInt(precisionScale[1])
-					}
-				} else {
-					dataType.Length = parseInt(precisionScale[0])
-				}
-			}
-		}
-
-		column.DataType = dataType
-	}
-
-	// Check for NOT NULL constraint
-	if strings.Contains(strings.ToUpper(columnDef), "NOT NULL") {
-		column.IsNullable = false
-	} else {
-		column.IsNullable = true
-	}
-
-	// Check for DEFAULT value
-	defaultRegex := regexp.MustCompile(`(?i)DEFAULT\s+([^,\s]+)`)
-	defaultMatches := defaultRegex.FindStringSubmatch(columnDef)
-	if len(defaultMatches) > 1 {
-		column.Default = defaultMatches[1]
-	}
-
-	// Check for IDENTITY
-	if strings.Contains(strings.ToUpper(columnDef), "IDENTITY") {
-		column.Identity = true
-		identityRegex := regexp.MustCompile(`IDENTITY\s*\((\d+),\s*(\d+)\)`)
-		identityMatches := identityRegex.FindStringSubmatch(columnDef)
-		if len(identityMatches) > 2 {
-			column.IdentitySeed = parseInt64(identityMatches[1])
-			column.IdentityIncr = parseInt64(identityMatches[2])
-		}
-	}
-
-	// Check for COLLATE definition
-	collateRegex := regexp.MustCompile(`(?i)COLLATE\s+([^\s,]+)`)
-	collateMatches := collateRegex.FindStringSubmatch(columnDef)
-	if len(collateMatches) > 1 {
-		column.Collation = collateMatches[1]
-	}
-
-	// Check for SPARSE
-	if strings.Contains(strings.ToUpper(columnDef), "SPARSE") {
-		column.Sparse = true
-	}
-
-	// Check for FILESTREAM
-	if strings.Contains(strings.ToUpper(columnDef), "FILESTREAM") {
-		column.FileStream = true
-	}
-
-	// Check for ROWGUIDCOL
-	if strings.Contains(strings.ToUpper(columnDef), "ROWGUIDCOL") {
-		column.RowGUIDCol = true
-	}
-
-	return column
-}
-
-// parseInt64 safely converts string to int64
-func parseInt64(s string) int64 {
-	s = strings.TrimSpace(s)
-	var result int64
-	fmt.Sscanf(s, "%d", &result)
-	return result
-}
-
-// Convert transforms Entity structure to SQL Server format
+// Convert transforms Entity structure to SQL Server format with optimized string handling
 func (p *SQLServerParser) Convert(entity *sdc.Entity) (string, error) {
-	var result strings.Builder
+	// Reset and reuse string builder
+	p.builderPool.Reset()
+	result := &p.builderPool
 
 	for _, table := range entity.Tables {
 		// CREATE TABLE statement
-		result.WriteString(fmt.Sprintf("CREATE TABLE [%s] (\n", table.Name))
+		result.WriteString("CREATE TABLE [")
+		result.WriteString(table.Name)
+		result.WriteString("] (\n")
 
 		// Columns
 		for i, column := range table.Columns {
-			result.WriteString(fmt.Sprintf("    [%s] %s", column.Name, p.convertDataType(column.DataType)))
+			result.WriteString("    [")
+			result.WriteString(column.Name)
+			result.WriteString("] ")
+			result.WriteString(p.convertDataType(column.DataType))
 
 			if column.Collation != "" {
-				result.WriteString(fmt.Sprintf(" COLLATE %s", column.Collation))
+				result.WriteString(" COLLATE ")
+				result.WriteString(column.Collation)
 			}
 
 			if !column.IsNullable {
@@ -221,12 +86,15 @@ func (p *SQLServerParser) Convert(entity *sdc.Entity) (string, error) {
 			}
 
 			if column.Default != "" {
-				result.WriteString(fmt.Sprintf(" DEFAULT %s", column.Default))
+				result.WriteString(" DEFAULT ")
+				result.WriteString(column.Default)
 			}
 
 			if column.Identity {
 				if column.IdentitySeed != 0 || column.IdentityIncr != 0 {
-					result.WriteString(fmt.Sprintf(" IDENTITY(%d,%d)", column.IdentitySeed, column.IdentityIncr))
+					result.WriteString(" IDENTITY(")
+					result.WriteString(fmt.Sprintf("%d,%d", column.IdentitySeed, column.IdentityIncr))
+					result.WriteString(")")
 				} else {
 					result.WriteString(" IDENTITY")
 				}
@@ -251,7 +119,9 @@ func (p *SQLServerParser) Convert(entity *sdc.Entity) (string, error) {
 
 		// FileGroup
 		if table.FileGroup != "" {
-			result.WriteString(fmt.Sprintf(") ON [%s]", table.FileGroup))
+			result.WriteString(") ON [")
+			result.WriteString(table.FileGroup)
+			result.WriteString("]")
 		} else {
 			result.WriteString(")")
 		}
@@ -262,15 +132,252 @@ func (p *SQLServerParser) Convert(entity *sdc.Entity) (string, error) {
 	return result.String(), nil
 }
 
+// parseCreateTable parses CREATE TABLE statement with optimized string handling
+func (p *SQLServerParser) parseCreateTable(sql string) (*sdc.Table, error) {
+	matches := sqlServerCreateTableRegex.FindStringSubmatch(sql)
+	if len(matches) < 4 {
+		return nil, fmt.Errorf("invalid CREATE TABLE statement")
+	}
+
+	table := &sdc.Table{
+		Schema:      strings.Trim(matches[1], "[]\""),
+		Name:        strings.Trim(matches[2], "[]\""),
+		FileGroup:   strings.Trim(matches[4], "[]\""),
+		Columns:     make([]*sdc.Column, 0),     // Pre-allocate slices
+		Constraints: make([]*sdc.Constraint, 0), // Pre-allocate slices
+	}
+
+	// Parse column definitions efficiently
+	defs := splitWithParentheses(matches[3])
+	for _, def := range defs {
+		def = strings.TrimSpace(def)
+		if def == "" {
+			continue
+		}
+
+		// Parse constraints
+		upperDef := strings.ToUpper(def)
+		if strings.HasPrefix(upperDef, "CONSTRAINT") ||
+			strings.HasPrefix(upperDef, "PRIMARY KEY") ||
+			strings.HasPrefix(upperDef, "FOREIGN KEY") ||
+			strings.HasPrefix(upperDef, "UNIQUE") {
+			constraint := p.parseConstraint(def)
+			if constraint != nil {
+				table.Constraints = append(table.Constraints, constraint)
+			}
+			continue
+		}
+
+		// Parse column definition
+		column := p.parseColumn(def)
+		if column != nil {
+			table.Columns = append(table.Columns, column)
+		}
+	}
+
+	return table, nil
+}
+
+// parseColumn parses column definition with optimized string handling
+func (p *SQLServerParser) parseColumn(columnDef string) *sdc.Column {
+	matches := sqlserverColumnRegex.FindStringSubmatch(columnDef)
+	if len(matches) < 3 {
+		return nil
+	}
+
+	column := &sdc.Column{
+		Name:       strings.Trim(matches[1], "[]\""),
+		IsNullable: true, // Default to nullable
+		Nullable:   true,
+	}
+
+	// Parse data type
+	dataType := &sdc.DataType{
+		Name: matches[2],
+	}
+
+	// Parse length/precision/scale
+	if matches[3] != "" {
+		parts := strings.Split(matches[3], ",")
+		if len(parts) > 0 {
+			if dataType.Name == "decimal" || dataType.Name == "numeric" {
+				dataType.Precision, _ = parseNumber(parts[0])
+				if len(parts) > 1 {
+					dataType.Scale, _ = parseNumber(parts[1])
+				}
+			} else {
+				dataType.Length, _ = parseNumber(parts[0])
+			}
+		}
+	}
+
+	column.DataType = dataType
+
+	// Parse additional properties
+	rest := matches[4]
+	if rest != "" {
+		// Check for IDENTITY
+		if strings.Contains(strings.ToUpper(rest), "IDENTITY") {
+			column.Identity = true
+			column.AutoIncrement = true
+		}
+
+		// Check for DEFAULT
+		if defaultMatches := sqlserverDefaultRegex.FindStringSubmatch(rest); defaultMatches != nil {
+			column.Default = defaultMatches[1]
+		}
+
+		// Check for NOT NULL
+		if strings.Contains(strings.ToUpper(rest), "NOT NULL") {
+			column.IsNullable = false
+			column.Nullable = false
+		}
+
+		// Check for PRIMARY KEY
+		if strings.Contains(strings.ToUpper(rest), "PRIMARY KEY") {
+			column.PrimaryKey = true
+			column.IsNullable = false
+			column.Nullable = false
+		}
+
+		// Check for UNIQUE
+		if strings.Contains(strings.ToUpper(rest), "UNIQUE") {
+			column.Unique = true
+		}
+
+		// Check for COLLATE
+		if collateMatches := sqlserverCollateRegex.FindStringSubmatch(rest); collateMatches != nil {
+			column.Collation = collateMatches[1]
+		}
+	}
+
+	return column
+}
+
+// parseConstraint parses constraint definition
+func (p *SQLServerParser) parseConstraint(constraintDef string) *sdc.Constraint {
+	constraint := &sdc.Constraint{}
+
+	// Split constraint definition into parts
+	parts := strings.Fields(constraintDef)
+	if len(parts) < 2 {
+		return nil
+	}
+
+	// Check if it starts with CONSTRAINT keyword
+	startIdx := 0
+	if strings.ToUpper(parts[0]) == "CONSTRAINT" {
+		if len(parts) < 3 {
+			return nil
+		}
+		constraint.Name = strings.Trim(parts[1], "[]\"")
+		startIdx = 2
+	}
+
+	// Parse constraint type and details
+	constraintType := strings.ToUpper(parts[startIdx])
+	switch constraintType {
+	case "PRIMARY":
+		if startIdx+1 < len(parts) && strings.ToUpper(parts[startIdx+1]) == "KEY" {
+			constraint.Type = "PRIMARY KEY"
+			// Check for CLUSTERED/NONCLUSTERED
+			nextIdx := startIdx + 2
+			if nextIdx < len(parts) {
+				switch strings.ToUpper(parts[nextIdx]) {
+				case "CLUSTERED":
+					constraint.Clustered = true
+					nextIdx++
+				case "NONCLUSTERED":
+					constraint.NonClustered = true
+					nextIdx++
+				}
+			}
+			// Parse columns
+			if nextIdx < len(parts) && strings.HasPrefix(parts[nextIdx], "(") {
+				colStr := strings.Trim(parts[nextIdx], "()")
+				cols := strings.Split(colStr, ",")
+				for _, col := range cols {
+					constraint.Columns = append(constraint.Columns, strings.Trim(col, "[]\""))
+				}
+			}
+		}
+	case "FOREIGN":
+		if startIdx+1 < len(parts) && strings.ToUpper(parts[startIdx+1]) == "KEY" {
+			constraint.Type = "FOREIGN KEY"
+			// Parse columns
+			nextIdx := startIdx + 2
+			if nextIdx < len(parts) && strings.HasPrefix(parts[nextIdx], "(") {
+				colStr := strings.Trim(parts[nextIdx], "()")
+				cols := strings.Split(colStr, ",")
+				for _, col := range cols {
+					constraint.Columns = append(constraint.Columns, strings.Trim(col, "[]\""))
+				}
+				nextIdx++
+			}
+			// Parse REFERENCES
+			for i := nextIdx; i < len(parts); i++ {
+				if strings.ToUpper(parts[i]) == "REFERENCES" {
+					if i+1 < len(parts) {
+						constraint.RefTable = strings.Trim(parts[i+1], "[]\"")
+						i++
+						if i+1 < len(parts) && strings.HasPrefix(parts[i+1], "(") {
+							refColStr := strings.Trim(parts[i+1], "()")
+							refCols := strings.Split(refColStr, ",")
+							for _, col := range refCols {
+								constraint.RefColumns = append(constraint.RefColumns, strings.Trim(col, "[]\""))
+							}
+							i++
+						}
+					}
+					// Parse ON DELETE/UPDATE actions
+					for j := i + 1; j < len(parts); j++ {
+						if strings.ToUpper(parts[j]) == "ON" && j+2 < len(parts) {
+							action := strings.ToUpper(parts[j+1])
+							if action == "DELETE" {
+								constraint.OnDelete = strings.ToUpper(parts[j+2])
+								j += 2
+								i = j
+							} else if action == "UPDATE" {
+								constraint.OnUpdate = strings.ToUpper(parts[j+2])
+								j += 2
+								i = j
+							}
+						}
+					}
+					break
+				}
+			}
+		}
+	case "UNIQUE":
+		constraint.Type = "UNIQUE"
+		// Check for CLUSTERED/NONCLUSTERED
+		nextIdx := startIdx + 1
+		if nextIdx < len(parts) {
+			switch strings.ToUpper(parts[nextIdx]) {
+			case "CLUSTERED":
+				constraint.Clustered = true
+				nextIdx++
+			case "NONCLUSTERED":
+				constraint.NonClustered = true
+				nextIdx++
+			}
+		}
+		// Parse columns
+		if nextIdx < len(parts) && strings.HasPrefix(parts[nextIdx], "(") {
+			colStr := strings.Trim(parts[nextIdx], "()")
+			cols := strings.Split(colStr, ",")
+			for _, col := range cols {
+				constraint.Columns = append(constraint.Columns, strings.Trim(col, "[]\""))
+			}
+		}
+	}
+
+	return constraint
+}
+
 // convertDataType converts data type to SQL Server format
 func (p *SQLServerParser) convertDataType(dataType *sdc.DataType) string {
 	if dataType == nil {
-		return "varchar(max)"
-	}
-
-	// Sütun sayısı kontrolü
-	if p.dbInfo.MaxColumns > 0 && p.currentTable != nil && len(p.currentTable.Columns) >= p.dbInfo.MaxColumns {
-		// Hata durumunda varsayılan tip dönüyoruz
 		return "varchar(max)"
 	}
 
@@ -326,105 +433,10 @@ func (p *SQLServerParser) convertDataType(dataType *sdc.DataType) string {
 	}
 }
 
-// GetDefaultSchema returns the default schema name
-func (p *SQLServerParser) GetDefaultSchema() string {
-	return p.dbInfo.DefaultSchema
-}
-
-// GetSchemaPrefix returns the schema prefix
-func (p *SQLServerParser) GetSchemaPrefix(schema string) string {
-	if schema == "" || schema == p.dbInfo.DefaultSchema {
-		return ""
-	}
-	return schema + "."
-}
-
-// GetIdentifierQuote returns the identifier quote character
-func (p *SQLServerParser) GetIdentifierQuote() string {
-	return p.dbInfo.IdentifierQuote
-}
-
-// GetStringQuote returns the string quote character
-func (p *SQLServerParser) GetStringQuote() string {
-	return p.dbInfo.StringQuote
-}
-
-// GetMaxIdentifierLength returns the maximum identifier length
-func (p *SQLServerParser) GetMaxIdentifierLength() int {
-	return p.dbInfo.MaxIdentifierLength
-}
-
-// GetReservedWords returns the reserved words
-func (p *SQLServerParser) GetReservedWords() []string {
-	return p.dbInfo.ReservedWords
-}
-
-// ConvertDataTypeFrom converts source database data type to SQL Server data type
-func (p *SQLServerParser) ConvertDataTypeFrom(sourceType string, length int, precision int, scale int) *sdc.DataType {
-	return &sdc.DataType{
-		Name:      sourceType,
-		Length:    length,
-		Precision: precision,
-		Scale:     scale,
-	}
-}
-
-// ParseCreateTable parses CREATE TABLE statement
-func (p *SQLServerParser) ParseCreateTable(sql string) (*sdc.Table, error) {
-	// Remove comments and extra whitespace
-	sql = strings.TrimSpace(sql)
-
-	// Basic validation
-	if !strings.HasPrefix(strings.ToUpper(sql), "CREATE TABLE") {
-		return nil, fmt.Errorf("invalid CREATE TABLE statement")
-	}
-
-	// Extract table name and schema
-	tableRegex := regexp.MustCompile(`(?i)CREATE\s+TABLE\s+(?:\[?(\w+)\]?\.)?(?:\[([^\]]+)\]|\[?(\w+)\]?)\s*\((.*?)\)(?:\s+ON\s+\[?(\w+)\]?)?`)
-	matches := tableRegex.FindStringSubmatch(sql)
-	if len(matches) < 5 {
-		return nil, fmt.Errorf("could not parse CREATE TABLE statement")
-	}
-
-	table := &sdc.Table{
-		Schema:    matches[1],
-		Name:      matches[2],
-		FileGroup: matches[4],
-	}
-
-	if table.Schema == "" {
-		table.Schema = "dbo"
-	}
-
-	// Parse column definitions
-	columnDefs := strings.Split(matches[3], ",")
-	for _, columnDef := range columnDefs {
-		columnDef = strings.TrimSpace(columnDef)
-		if columnDef == "" {
-			continue
-		}
-
-		// Parse column
-		if !strings.HasPrefix(strings.ToUpper(columnDef), "CONSTRAINT") {
-			column := p.parseColumn(columnDef)
-			if column != nil {
-				table.Columns = append(table.Columns, column)
-			}
-		} else {
-			// Parse constraint
-			constraint := p.parseConstraint(columnDef)
-			if constraint != nil {
-				table.Constraints = append(table.Constraints, constraint)
-			}
-		}
-	}
-
-	return table, nil
-}
-
-// ParseAlterTable parses ALTER TABLE statement
-func (p *SQLServerParser) ParseAlterTable(sql string) (*sdc.AlterTable, error) {
-	// Remove comments and extra whitespace
+// parseAlterTable parses ALTER TABLE statement
+func (p *SQLServerParser) parseAlterTable(sql string) (*sdc.AlterTable, error) {
+	// Remove comments and normalize whitespace
+	sql = removeComments(sql)
 	sql = strings.TrimSpace(sql)
 
 	// Basic validation
@@ -432,47 +444,63 @@ func (p *SQLServerParser) ParseAlterTable(sql string) (*sdc.AlterTable, error) {
 		return nil, fmt.Errorf("invalid ALTER TABLE statement")
 	}
 
-	alterTable := &sdc.AlterTable{}
-
-	// Extract table name and schema
-	tableRegex := regexp.MustCompile(`(?i)ALTER\s+TABLE\s+(?:\[?(\w+)\]?\.)?(?:\[([^\]]+)\]|\[?(\w+)\]?)\s+(.*)`)
-	matches := tableRegex.FindStringSubmatch(sql)
-	if len(matches) < 5 {
+	// Extract schema, table name and action
+	alterTableRegex := regexp.MustCompile(`(?i)ALTER\s+TABLE\s+(?:\[?([^\]\.]+)\]?\.)?(?:\[?([^\]\s]+)\]?)\s+(?:ADD|DROP|ALTER\s+COLUMN)\s+(.+)`)
+	matches := alterTableRegex.FindStringSubmatch(sql)
+	if len(matches) < 4 {
 		return nil, fmt.Errorf("could not parse ALTER TABLE statement")
 	}
 
-	alterTable.Schema = matches[1]
-	alterTable.Table = matches[2]
-	if alterTable.Schema == "" {
-		alterTable.Schema = "dbo"
+	schema := matches[1]
+	if schema == "" {
+		schema = "dbo" // Default schema for SQL Server
 	}
 
-	// Parse action
-	action := strings.TrimSpace(matches[4])
-	if strings.HasPrefix(strings.ToUpper(action), "ADD") {
-		alterTable.Action = "ADD"
-		if strings.HasPrefix(strings.ToUpper(action), "ADD CONSTRAINT") {
-			alterTable.Action = "ADD CONSTRAINT"
-			alterTable.Constraint = p.parseConstraint(action[14:])
-		} else {
-			alterTable.Column = p.parseColumn(action[4:])
+	alterTable := &sdc.AlterTable{
+		Schema: strings.Trim(schema, "[]\""),
+		Table:  strings.Trim(matches[2], "[]\""),
+	}
+
+	// Parse the action and its details
+	action := strings.ToUpper(matches[3])
+	if strings.HasPrefix(action, "ADD CONSTRAINT") {
+		alterTable.Action = "ADD CONSTRAINT"
+		constraint := p.parseConstraint(matches[3][len("ADD CONSTRAINT"):])
+		if constraint != nil {
+			alterTable.Constraint = constraint
 		}
-	} else if strings.HasPrefix(strings.ToUpper(action), "DROP") {
-		alterTable.Action = "DROP"
-		if strings.HasPrefix(strings.ToUpper(action), "DROP CONSTRAINT") {
-			alterTable.Action = "DROP CONSTRAINT"
-			alterTable.Constraint = &sdc.Constraint{Name: strings.TrimSpace(action[15:])}
-		} else {
-			alterTable.Column = &sdc.Column{Name: strings.TrimSpace(action[5:])}
+	} else if strings.HasPrefix(action, "ADD") {
+		alterTable.Action = "ADD COLUMN"
+		column := p.parseColumn(matches[3][len("ADD"):])
+		if column != nil {
+			alterTable.Column = column
+		}
+	} else if strings.HasPrefix(action, "DROP CONSTRAINT") {
+		alterTable.Action = "DROP CONSTRAINT"
+		constraintName := strings.Trim(matches[3][len("DROP CONSTRAINT"):], " []\"")
+		alterTable.Constraint = &sdc.Constraint{Name: constraintName}
+	} else if strings.HasPrefix(action, "DROP COLUMN") || strings.HasPrefix(action, "DROP") {
+		alterTable.Action = "DROP COLUMN"
+		columnName := strings.Trim(matches[3][len("DROP COLUMN"):], " []\"")
+		if strings.HasPrefix(columnName, "COLUMN ") {
+			columnName = strings.Trim(columnName[len("COLUMN"):], " []\"")
+		}
+		alterTable.Column = &sdc.Column{Name: columnName}
+	} else if strings.HasPrefix(action, "ALTER COLUMN") {
+		alterTable.Action = "ALTER COLUMN"
+		column := p.parseColumn(matches[3][len("ALTER COLUMN"):])
+		if column != nil {
+			alterTable.Column = column
 		}
 	}
 
 	return alterTable, nil
 }
 
-// ParseDropTable parses DROP TABLE statement
-func (p *SQLServerParser) ParseDropTable(sql string) (*sdc.DropTable, error) {
-	// Remove comments and extra whitespace
+// parseDropTable parses DROP TABLE statement
+func (p *SQLServerParser) parseDropTable(sql string) (*sdc.DropTable, error) {
+	// Remove comments and normalize whitespace
+	sql = removeComments(sql)
 	sql = strings.TrimSpace(sql)
 
 	// Basic validation
@@ -480,28 +508,33 @@ func (p *SQLServerParser) ParseDropTable(sql string) (*sdc.DropTable, error) {
 		return nil, fmt.Errorf("invalid DROP TABLE statement")
 	}
 
-	dropTable := &sdc.DropTable{}
+	// Check for IF EXISTS
+	ifExists := strings.Contains(strings.ToUpper(sql), "IF EXISTS")
 
-	// Extract table name and schema
-	tableRegex := regexp.MustCompile(`(?i)DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:\[?(\w+)\]?\.)?(?:\[([^\]]+)\]|\[?(\w+)\]?)`)
-	matches := tableRegex.FindStringSubmatch(sql)
+	// Extract schema and table name
+	dropTableRegex := regexp.MustCompile(`(?i)DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:\[?([^\]\.]+)\]?\.)?(?:\[?([^\]\s;]+)\]?)`)
+	matches := dropTableRegex.FindStringSubmatch(sql)
 	if len(matches) < 3 {
 		return nil, fmt.Errorf("could not parse DROP TABLE statement")
 	}
 
-	dropTable.Schema = matches[1]
-	dropTable.Table = matches[2]
-	if dropTable.Schema == "" {
-		dropTable.Schema = "dbo"
+	schema := matches[1]
+	if schema == "" {
+		schema = "dbo" // Default schema for SQL Server
 	}
-	dropTable.IfExists = strings.Contains(strings.ToUpper(sql), "IF EXISTS")
 
-	return dropTable, nil
+	return &sdc.DropTable{
+		Schema:   strings.Trim(schema, "[]\""),
+		Table:    strings.Trim(matches[2], "[]\""),
+		IfExists: ifExists,
+		Cascade:  strings.Contains(strings.ToUpper(sql), "CASCADE"),
+	}, nil
 }
 
-// ParseCreateIndex parses CREATE INDEX statement
-func (p *SQLServerParser) ParseCreateIndex(sql string) (*sdc.Index, error) {
-	// Remove comments and extra whitespace
+// parseCreateIndex parses CREATE INDEX statement
+func (p *SQLServerParser) parseCreateIndex(sql string) (*sdc.Index, error) {
+	// Remove comments and normalize whitespace
+	sql = removeComments(sql)
 	sql = strings.TrimSpace(sql)
 
 	// Basic validation
@@ -509,70 +542,76 @@ func (p *SQLServerParser) ParseCreateIndex(sql string) (*sdc.Index, error) {
 		return nil, fmt.Errorf("invalid CREATE INDEX statement")
 	}
 
-	index := &sdc.Index{}
+	// Check if it's a unique index
+	isUnique := strings.HasPrefix(strings.ToUpper(sql), "CREATE UNIQUE")
 
-	// Extract index information
-	var indexRegex *regexp.Regexp
-	if strings.Contains(strings.ToUpper(sql), "UNIQUE") {
-		indexRegex = regexp.MustCompile(`(?i)CREATE\s+UNIQUE\s+(?:CLUSTERED\s+)?INDEX\s+\[?(\w+)\]?\s+ON\s+(?:\[?(\w+)\]?\.)?(?:\[?(\w+)\]?)\s*\((.*?)\)(?:\s+INCLUDE\s*\((.*?)\))?(?:\s+WHERE\s+(.*))?(?:\s+WITH\s*\((.*?)\))?(?:\s+ON\s+\[?(\w+)\]?)?`)
-		index.Unique = true
-	} else {
-		indexRegex = regexp.MustCompile(`(?i)CREATE\s+(?:CLUSTERED\s+)?INDEX\s+\[?(\w+)\]?\s+ON\s+(?:\[?(\w+)\]?\.)?(?:\[?(\w+)\]?)\s*\((.*?)\)(?:\s+INCLUDE\s*\((.*?)\))?(?:\s+WHERE\s+(.*))?(?:\s+WITH\s*\((.*?)\))?(?:\s+ON\s+\[?(\w+)\]?)?`)
-	}
-
+	// Extract index details
+	indexRegex := regexp.MustCompile(`(?i)CREATE\s+(?:UNIQUE\s+)?(?:CLUSTERED\s+)?(?:NONCLUSTERED\s+)?INDEX\s+(?:\[?([^\]\.]+)\]?)\s+ON\s+(?:\[?([^\]\.]+)\]?\.)?(?:\[?([^\]\s(]+)\]?)\s*\(([^)]+)\)(?:\s+INCLUDE\s*\(([^)]+)\))?(?:\s+WHERE\s+(.+))?(?:\s+WITH\s+\(([^)]+)\))?(?:\s+ON\s+(?:\[?([^\]\s]+)\]?))?`)
 	matches := indexRegex.FindStringSubmatch(sql)
 	if len(matches) < 5 {
 		return nil, fmt.Errorf("could not parse CREATE INDEX statement")
 	}
 
-	index.Name = matches[1]
-	index.Schema = matches[2]
-	index.Table = matches[3]
-	if index.Schema == "" {
-		index.Schema = "dbo"
+	schema := matches[2]
+	if schema == "" {
+		schema = "dbo" // Default schema for SQL Server
 	}
 
-	// Parse columns
+	// Parse column names
+	var columns []string
 	columnList := strings.Split(matches[4], ",")
 	for _, col := range columnList {
 		col = strings.TrimSpace(col)
-		if col != "" {
-			index.Columns = append(index.Columns, col)
+		// Remove ASC/DESC and other options, keep only the column name
+		colParts := strings.Fields(col)
+		if len(colParts) > 0 {
+			columns = append(columns, strings.Trim(colParts[0], "[]\""))
 		}
 	}
 
-	// Parse included columns
-	if len(matches) > 5 && matches[5] != "" {
+	// Parse included columns if any
+	var includeColumns []string
+	if matches[5] != "" {
 		includeList := strings.Split(matches[5], ",")
 		for _, col := range includeList {
 			col = strings.TrimSpace(col)
-			if col != "" {
-				index.IncludeColumns = append(index.IncludeColumns, col)
+			includeColumns = append(includeColumns, strings.Trim(col, "[]\""))
+		}
+	}
+
+	// Parse options if any
+	var options map[string]string
+	if matches[7] != "" {
+		options = make(map[string]string)
+		optionsList := strings.Split(matches[7], ",")
+		for _, opt := range optionsList {
+			opt = strings.TrimSpace(opt)
+			parts := strings.SplitN(opt, "=", 2)
+			if len(parts) == 2 {
+				options[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
 			}
 		}
 	}
 
-	// Parse filter
-	if len(matches) > 6 && matches[6] != "" {
-		index.Filter = matches[6]
-	}
-
-	// Parse filegroup
-	if len(matches) > 8 && matches[8] != "" {
-		index.FileGroup = matches[8]
-	}
-
-	// Check for CLUSTERED
-	if strings.Contains(strings.ToUpper(sql), "CLUSTERED") {
-		index.Clustered = true
-	}
-
-	return index, nil
+	return &sdc.Index{
+		Name:           strings.Trim(matches[1], "[]\""),
+		Schema:         strings.Trim(schema, "[]\""),
+		Table:          strings.Trim(matches[3], "[]\""),
+		Columns:        columns,
+		Unique:         isUnique,
+		Clustered:      strings.Contains(strings.ToUpper(sql), "CLUSTERED") && !strings.Contains(strings.ToUpper(sql), "NONCLUSTERED"),
+		NonClustered:   strings.Contains(strings.ToUpper(sql), "NONCLUSTERED"),
+		FileGroup:      strings.Trim(matches[8], "[]\""),
+		Filter:         strings.TrimSpace(matches[6]),
+		IncludeColumns: includeColumns,
+		Options:        options,
+	}, nil
 }
 
-// ParseDropIndex parses DROP INDEX statement
-func (p *SQLServerParser) ParseDropIndex(sql string) (*sdc.DropIndex, error) {
-	// Remove comments and extra whitespace
+// parseDropIndex parses DROP INDEX statement
+func (p *SQLServerParser) parseDropIndex(sql string) (*sdc.DropIndex, error) {
+	// Remove comments and normalize whitespace
+	sql = removeComments(sql)
 	sql = strings.TrimSpace(sql)
 
 	// Basic validation
@@ -580,138 +619,26 @@ func (p *SQLServerParser) ParseDropIndex(sql string) (*sdc.DropIndex, error) {
 		return nil, fmt.Errorf("invalid DROP INDEX statement")
 	}
 
-	dropIndex := &sdc.DropIndex{}
+	// Check for IF EXISTS
+	ifExists := strings.Contains(strings.ToUpper(sql), "IF EXISTS")
 
-	// Extract index information
-	indexRegex := regexp.MustCompile(`(?i)DROP\s+INDEX\s+(?:IF\s+EXISTS\s+)?\[?(\w+)\]?\s+ON\s+(?:\[?(\w+)\]?\.)?(?:\[?(\w+)\]?)`)
-	matches := indexRegex.FindStringSubmatch(sql)
+	// Extract index and table names
+	dropIndexRegex := regexp.MustCompile(`(?i)DROP\s+INDEX\s+(?:IF\s+EXISTS\s+)?(?:\[?([^\]\.]+)\]?)\s+ON\s+(?:\[?([^\]\.]+)\]?\.)?(?:\[?([^\]\s;]+)\]?)`)
+	matches := dropIndexRegex.FindStringSubmatch(sql)
 	if len(matches) < 4 {
-		return nil, fmt.Errorf("could not parse DROP INDEX statement")
+		return nil, fmt.Errorf("invalid DROP INDEX statement")
 	}
 
-	dropIndex.Index = matches[1]
-	dropIndex.Schema = matches[2]
-	dropIndex.Table = matches[3]
-	if dropIndex.Schema == "" {
-		dropIndex.Schema = "dbo"
-	}
-	dropIndex.IfExists = strings.Contains(strings.ToUpper(sql), "IF EXISTS")
-
-	return dropIndex, nil
-}
-
-// parseConstraint parses constraint definition
-func (p *SQLServerParser) parseConstraint(constraintDef string) *sdc.Constraint {
-	constraint := &sdc.Constraint{}
-
-	// Extract constraint name
-	nameRegex := regexp.MustCompile(`(?i)CONSTRAINT\s+\[?(\w+)\]?\s+(.*)`)
-	matches := nameRegex.FindStringSubmatch(constraintDef)
-	if len(matches) < 3 {
-		return nil
+	schema := matches[2]
+	if schema == "" {
+		schema = "dbo" // Default schema for SQL Server
 	}
 
-	constraint.Name = matches[1]
-	constraintDef = matches[2]
-
-	// Determine constraint type and parse accordingly
-	if strings.HasPrefix(strings.ToUpper(constraintDef), "PRIMARY KEY") {
-		constraint.Type = "PRIMARY KEY"
-		columnsRegex := regexp.MustCompile(`\((.*?)\)`)
-		columnsMatch := columnsRegex.FindStringSubmatch(constraintDef)
-		if len(columnsMatch) > 1 {
-			columns := strings.Split(columnsMatch[1], ",")
-			for _, col := range columns {
-				constraint.Columns = append(constraint.Columns, strings.TrimSpace(col))
-			}
-		}
-	} else if strings.HasPrefix(strings.ToUpper(constraintDef), "FOREIGN KEY") {
-		constraint.Type = "FOREIGN KEY"
-		fkRegex := regexp.MustCompile(`FOREIGN\s+KEY\s*\((.*?)\)\s*REFERENCES\s+(\w+)\s*\((.*?)\)(?:\s+ON\s+DELETE\s+(\w+(?:\s+\w+)?))?(?:\s+ON\s+UPDATE\s+(\w+(?:\s+\w+)?))?`)
-		fkMatch := fkRegex.FindStringSubmatch(constraintDef)
-		if len(fkMatch) > 3 {
-			columns := strings.Split(fkMatch[1], ",")
-			for _, col := range columns {
-				constraint.Columns = append(constraint.Columns, strings.TrimSpace(col))
-			}
-			constraint.RefTable = fkMatch[2]
-			refColumns := strings.Split(fkMatch[3], ",")
-			for _, col := range refColumns {
-				constraint.RefColumns = append(constraint.RefColumns, strings.TrimSpace(col))
-			}
-			if len(fkMatch) > 4 && fkMatch[4] != "" {
-				constraint.OnDelete = fkMatch[4]
-			}
-			if len(fkMatch) > 5 && fkMatch[5] != "" {
-				constraint.OnUpdate = fkMatch[5]
-			}
-		}
-	} else if strings.HasPrefix(strings.ToUpper(constraintDef), "UNIQUE") {
-		constraint.Type = "UNIQUE"
-		columnsRegex := regexp.MustCompile(`\((.*?)\)`)
-		columnsMatch := columnsRegex.FindStringSubmatch(constraintDef)
-		if len(columnsMatch) > 1 {
-			columns := strings.Split(columnsMatch[1], ",")
-			for _, col := range columns {
-				constraint.Columns = append(constraint.Columns, strings.TrimSpace(col))
-			}
-		}
-	} else if strings.HasPrefix(strings.ToUpper(constraintDef), "CHECK") {
-		constraint.Type = "CHECK"
-		checkRegex := regexp.MustCompile(`CHECK\s*\((.*?)\)`)
-		checkMatch := checkRegex.FindStringSubmatch(constraintDef)
-		if len(checkMatch) > 1 {
-			constraint.Check = checkMatch[1]
-		}
-	}
-
-	return constraint
-}
-
-// ValidateIdentifier validates the identifier name
-func (p *SQLServerParser) ValidateIdentifier(name string) error {
-	// Maksimum uzunluk kontrolü
-	if p.dbInfo.MaxIdentifierLength > 0 && len(name) > p.dbInfo.MaxIdentifierLength {
-		return fmt.Errorf("identifier '%s' exceeds maximum length of %d", name, p.dbInfo.MaxIdentifierLength)
-	}
-
-	// Ayrılmış kelime kontrolü
-	for _, word := range p.dbInfo.ReservedWords {
-		if strings.ToUpper(name) == strings.ToUpper(word) {
-			return fmt.Errorf("identifier '%s' is a reserved word", name)
-		}
-	}
-
-	return nil
-}
-
-// EscapeIdentifier escapes the identifier name
-func (p *SQLServerParser) EscapeIdentifier(name string) string {
-	// Escape logic to be implemented
-	return name
-}
-
-// EscapeString escapes the string value
-func (p *SQLServerParser) EscapeString(value string) string {
-	// Escape logic to be implemented
-	return value
-}
-
-// ParseSQL parses SQL Server SQL statements and returns an Entity
-func (p *SQLServerParser) ParseSQL(sql string) (*sdc.Entity, error) {
-	entity := &sdc.Entity{}
-
-	// Find CREATE TABLE statements
-	createTableRegex := regexp.MustCompile(`(?i)CREATE\s+TABLE\s+(?:\[([^\]]+)\]|\[?(\w+)\]?)\s*\((.*?)\)(?:\s+ON\s+\[?(\w+)\]?)?(?:\s+TEXTIMAGE_ON\s+\[?(\w+)\]?)?`)
-	matches := createTableRegex.FindStringSubmatch(sql)
-
-	if len(matches) > 0 {
-		table, err := p.parseCreateTable(sql)
-		if err != nil {
-			return nil, err
-		}
-		entity.Tables = append(entity.Tables, table)
-	}
-
-	return entity, nil
+	return &sdc.DropIndex{
+		Schema:   strings.Trim(schema, "[]\""),
+		Table:    strings.Trim(matches[3], "[]\""),
+		Index:    strings.Trim(matches[1], "[]\""),
+		IfExists: ifExists,
+		Cascade:  strings.Contains(strings.ToUpper(sql), "CASCADE"),
+	}, nil
 }

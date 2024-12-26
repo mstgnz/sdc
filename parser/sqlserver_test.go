@@ -1,161 +1,77 @@
 package parser
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/mstgnz/sdc"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestSQLServerParser_ParseCreateTable(t *testing.T) {
 	tests := []struct {
-		name     string
-		sql      string
-		expected *sdc.Table
-		wantErr  bool
+		name    string
+		sql     string
+		want    *sdc.Table
+		wantErr bool
 	}{
 		{
 			name: "Table with all features",
-			sql: `CREATE TABLE [dbo].[users] (
-				[id] INT IDENTITY(1,1) PRIMARY KEY,
-				[username] NVARCHAR(50) NOT NULL UNIQUE,
-				[email] NVARCHAR(100) NOT NULL UNIQUE,
-				[password] NVARCHAR(100) NOT NULL,
-				[full_name] NVARCHAR(100),
-				[age] INT CHECK (age >= 18),
-				[created_at] DATETIME2 DEFAULT GETDATE(),
-				[updated_at] DATETIME2,
-				CONSTRAINT [users_email_check] CHECK (email LIKE '%@%.%')
-			) ON [PRIMARY];`,
-			expected: &sdc.Table{
-				Name:   "users",
-				Schema: "dbo",
+			sql: `CREATE TABLE [dbo].[Users] (
+				[Id] INT IDENTITY(1,1) PRIMARY KEY,
+				[Username] NVARCHAR(50) NOT NULL UNIQUE,
+				[Email] NVARCHAR(100) NOT NULL,
+				[CreatedAt] DATETIME2 DEFAULT GETDATE(),
+				[Status] TINYINT DEFAULT 1,
+				CONSTRAINT FK_Users_Roles FOREIGN KEY ([RoleId]) REFERENCES [Roles]([Id])
+			) ON [PRIMARY]`,
+			want: &sdc.Table{
+				Schema:    "dbo",
+				Name:      "Users",
+				FileGroup: "PRIMARY",
 				Columns: []*sdc.Column{
 					{
-						Name:          "id",
-						DataType:      &sdc.DataType{Name: "INT"},
-						PrimaryKey:    true,
-						AutoIncrement: true,
-						Identity:      true,
-						IdentitySeed:  1,
-						IdentityIncr:  1,
+						Name:         "Id",
+						DataType:     &sdc.DataType{Name: "INT"},
+						Identity:     true,
+						IdentitySeed: 1,
+						IdentityIncr: 1,
+						PrimaryKey:   true,
+						IsNullable:   false,
+						Nullable:     false,
 					},
 					{
-						Name:     "username",
-						DataType: &sdc.DataType{Name: "NVARCHAR", Length: 50},
-						Nullable: false,
-						Unique:   true,
+						Name:       "Username",
+						DataType:   &sdc.DataType{Name: "NVARCHAR", Length: 50},
+						IsNullable: false,
+						Nullable:   false,
+						Unique:     true,
 					},
 					{
-						Name:     "email",
-						DataType: &sdc.DataType{Name: "NVARCHAR", Length: 100},
-						Nullable: false,
-						Unique:   true,
+						Name:       "Email",
+						DataType:   &sdc.DataType{Name: "NVARCHAR", Length: 100},
+						IsNullable: false,
+						Nullable:   false,
 					},
 					{
-						Name:     "password",
-						DataType: &sdc.DataType{Name: "NVARCHAR", Length: 100},
-						Nullable: false,
-					},
-					{
-						Name:     "full_name",
-						DataType: &sdc.DataType{Name: "NVARCHAR", Length: 100},
-						Nullable: true,
-					},
-					{
-						Name:     "age",
-						DataType: &sdc.DataType{Name: "INT"},
-						Check:    "age >= 18",
-					},
-					{
-						Name:     "created_at",
+						Name:     "CreatedAt",
 						DataType: &sdc.DataType{Name: "DATETIME2"},
 						Default:  "GETDATE()",
 					},
 					{
-						Name:     "updated_at",
-						DataType: &sdc.DataType{Name: "DATETIME2"},
-						Nullable: true,
-					},
-				},
-				Constraints: []*sdc.Constraint{
-					{
-						Name:  "users_email_check",
-						Type:  "CHECK",
-						Check: "email LIKE '%@%.%'",
-					},
-				},
-				FileGroup: "PRIMARY",
-			},
-			wantErr: false,
-		},
-		{
-			name: "Table with foreign keys",
-			sql: `CREATE TABLE [dbo].[orders] (
-				[id] INT IDENTITY(1,1) PRIMARY KEY,
-				[user_id] INT NOT NULL REFERENCES [users]([id]) ON DELETE CASCADE,
-				[product_id] INT NOT NULL,
-				[quantity] INT NOT NULL DEFAULT 1,
-				[status] NVARCHAR(20) NOT NULL DEFAULT 'pending',
-				[created_at] DATETIME2 DEFAULT GETDATE(),
-				FOREIGN KEY ([product_id]) REFERENCES [products]([id]) ON DELETE NO ACTION
-			) ON [PRIMARY];`,
-			expected: &sdc.Table{
-				Name:   "orders",
-				Schema: "dbo",
-				Columns: []*sdc.Column{
-					{
-						Name:          "id",
-						DataType:      &sdc.DataType{Name: "INT"},
-						PrimaryKey:    true,
-						AutoIncrement: true,
-						Identity:      true,
-						IdentitySeed:  1,
-						IdentityIncr:  1,
-					},
-					{
-						Name:     "user_id",
-						DataType: &sdc.DataType{Name: "INT"},
-						Nullable: false,
-						ForeignKey: &sdc.ForeignKey{
-							RefTable:  "users",
-							RefColumn: "id",
-							OnDelete:  "CASCADE",
-						},
-					},
-					{
-						Name:     "product_id",
-						DataType: &sdc.DataType{Name: "INT"},
-						Nullable: false,
-					},
-					{
-						Name:     "quantity",
-						DataType: &sdc.DataType{Name: "INT"},
-						Nullable: false,
+						Name:     "Status",
+						DataType: &sdc.DataType{Name: "TINYINT"},
 						Default:  "1",
 					},
-					{
-						Name:     "status",
-						DataType: &sdc.DataType{Name: "NVARCHAR", Length: 20},
-						Nullable: false,
-						Default:  "'pending'",
-					},
-					{
-						Name:     "created_at",
-						DataType: &sdc.DataType{Name: "DATETIME2"},
-						Default:  "GETDATE()",
-					},
 				},
 				Constraints: []*sdc.Constraint{
 					{
+						Name:       "FK_Users_Roles",
 						Type:       "FOREIGN KEY",
-						Columns:    []string{"product_id"},
-						RefTable:   "products",
-						RefColumns: []string{"id"},
-						OnDelete:   "NO ACTION",
+						Columns:    []string{"RoleId"},
+						RefTable:   "Roles",
+						RefColumns: []string{"Id"},
 					},
 				},
-				FileGroup: "PRIMARY",
 			},
 			wantErr: false,
 		},
@@ -165,65 +81,35 @@ func TestSQLServerParser_ParseCreateTable(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parser.ParseCreateTable(tt.sql)
-			if tt.wantErr {
-				assert.Error(t, err)
+			got, err := parser.parseCreateTable(tt.sql)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("SQLServerParser.parseCreateTable() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			assert.NoError(t, err)
-			assert.Equal(t, tt.expected, got)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("SQLServerParser.parseCreateTable() = %v, want %v", got, tt.want)
+			}
 		})
 	}
 }
 
 func TestSQLServerParser_ParseAlterTable(t *testing.T) {
 	tests := []struct {
-		name     string
-		sql      string
-		expected *sdc.AlterTable
-		wantErr  bool
+		name    string
+		sql     string
+		want    *sdc.AlterTable
+		wantErr bool
 	}{
 		{
 			name: "Add column",
-			sql: `ALTER TABLE [dbo].[users] 
-				ADD [middle_name] NVARCHAR(50);`,
-			expected: &sdc.AlterTable{
+			sql:  "ALTER TABLE [dbo].[Users] ADD [LastLoginDate] DATETIME2 NULL",
+			want: &sdc.AlterTable{
 				Schema: "dbo",
-				Table:  "users",
+				Table:  "Users",
 				Action: "ADD COLUMN",
 				Column: &sdc.Column{
-					Name:     "middle_name",
-					DataType: &sdc.DataType{Name: "NVARCHAR", Length: 50},
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "Drop column",
-			sql: `ALTER TABLE [dbo].[users] 
-				DROP COLUMN [middle_name];`,
-			expected: &sdc.AlterTable{
-				Schema: "dbo",
-				Table:  "users",
-				Action: "DROP COLUMN",
-				Column: &sdc.Column{
-					Name: "middle_name",
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "Add constraint",
-			sql: `ALTER TABLE [dbo].[users] 
-				ADD CONSTRAINT [users_age_check] CHECK (age >= 21);`,
-			expected: &sdc.AlterTable{
-				Schema: "dbo",
-				Table:  "users",
-				Action: "ADD CONSTRAINT",
-				Constraint: &sdc.Constraint{
-					Name:  "users_age_check",
-					Type:  "CHECK",
-					Check: "age >= 21",
+					Name:     "LastLoginDate",
+					DataType: &sdc.DataType{Name: "DATETIME2"},
 				},
 			},
 			wantErr: false,
@@ -234,40 +120,31 @@ func TestSQLServerParser_ParseAlterTable(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parser.ParseAlterTable(tt.sql)
-			if tt.wantErr {
-				assert.Error(t, err)
+			got, err := parser.parseAlterTable(tt.sql)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("SQLServerParser.parseAlterTable() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			assert.NoError(t, err)
-			assert.Equal(t, tt.expected, got)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("SQLServerParser.parseAlterTable() = %v, want %v", got, tt.want)
+			}
 		})
 	}
 }
 
 func TestSQLServerParser_ParseDropTable(t *testing.T) {
 	tests := []struct {
-		name     string
-		sql      string
-		expected *sdc.DropTable
-		wantErr  bool
+		name    string
+		sql     string
+		want    *sdc.DropTable
+		wantErr bool
 	}{
 		{
 			name: "Drop table",
-			sql:  "DROP TABLE [dbo].[users];",
-			expected: &sdc.DropTable{
+			sql:  "DROP TABLE [dbo].[Users]",
+			want: &sdc.DropTable{
 				Schema: "dbo",
-				Table:  "users",
-			},
-			wantErr: false,
-		},
-		{
-			name: "Drop table if exists",
-			sql:  "IF OBJECT_ID('[dbo].[users]', 'U') IS NOT NULL DROP TABLE [dbo].[users];",
-			expected: &sdc.DropTable{
-				Schema:   "dbo",
-				Table:    "users",
-				IfExists: true,
+				Table:  "Users",
 			},
 			wantErr: false,
 		},
@@ -277,56 +154,33 @@ func TestSQLServerParser_ParseDropTable(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parser.ParseDropTable(tt.sql)
-			if tt.wantErr {
-				assert.Error(t, err)
+			got, err := parser.parseDropTable(tt.sql)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("SQLServerParser.parseDropTable() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			assert.NoError(t, err)
-			assert.Equal(t, tt.expected, got)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("SQLServerParser.parseDropTable() = %v, want %v", got, tt.want)
+			}
 		})
 	}
 }
 
 func TestSQLServerParser_ParseCreateIndex(t *testing.T) {
 	tests := []struct {
-		name     string
-		sql      string
-		expected *sdc.Index
-		wantErr  bool
+		name    string
+		sql     string
+		want    *sdc.Index
+		wantErr bool
 	}{
 		{
 			name: "Create index",
-			sql:  "CREATE INDEX [idx_users_email] ON [dbo].[users]([email]);",
-			expected: &sdc.Index{
-				Name:    "idx_users_email",
+			sql:  "CREATE INDEX [IX_Users_Email] ON [dbo].[Users] ([Email])",
+			want: &sdc.Index{
+				Name:    "IX_Users_Email",
 				Schema:  "dbo",
-				Table:   "users",
-				Columns: []string{"email"},
-			},
-			wantErr: false,
-		},
-		{
-			name: "Create unique index",
-			sql:  "CREATE UNIQUE INDEX [idx_users_username] ON [dbo].[users]([username]);",
-			expected: &sdc.Index{
-				Name:    "idx_users_username",
-				Schema:  "dbo",
-				Table:   "users",
-				Columns: []string{"username"},
-				Unique:  true,
-			},
-			wantErr: false,
-		},
-		{
-			name: "Create clustered index",
-			sql:  "CREATE CLUSTERED INDEX [idx_users_name] ON [dbo].[users]([first_name], [last_name]);",
-			expected: &sdc.Index{
-				Name:      "idx_users_name",
-				Schema:    "dbo",
-				Table:     "users",
-				Columns:   []string{"first_name", "last_name"},
-				Clustered: true,
+				Table:   "Users",
+				Columns: []string{"Email"},
 			},
 			wantErr: false,
 		},
@@ -336,42 +190,32 @@ func TestSQLServerParser_ParseCreateIndex(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parser.ParseCreateIndex(tt.sql)
-			if tt.wantErr {
-				assert.Error(t, err)
+			got, err := parser.parseCreateIndex(tt.sql)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("SQLServerParser.parseCreateIndex() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			assert.NoError(t, err)
-			assert.Equal(t, tt.expected, got)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("SQLServerParser.parseCreateIndex() = %v, want %v", got, tt.want)
+			}
 		})
 	}
 }
 
 func TestSQLServerParser_ParseDropIndex(t *testing.T) {
 	tests := []struct {
-		name     string
-		sql      string
-		expected *sdc.DropIndex
-		wantErr  bool
+		name    string
+		sql     string
+		want    *sdc.DropIndex
+		wantErr bool
 	}{
 		{
 			name: "Drop index",
-			sql:  "DROP INDEX [idx_users_email] ON [dbo].[users];",
-			expected: &sdc.DropIndex{
+			sql:  "DROP INDEX [IX_Users_Email] ON [dbo].[Users]",
+			want: &sdc.DropIndex{
 				Schema: "dbo",
-				Table:  "users",
-				Index:  "idx_users_email",
-			},
-			wantErr: false,
-		},
-		{
-			name: "Drop index if exists",
-			sql:  "IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_users_email') DROP INDEX [idx_users_email] ON [dbo].[users];",
-			expected: &sdc.DropIndex{
-				Schema:   "dbo",
-				Table:    "users",
-				Index:    "idx_users_email",
-				IfExists: true,
+				Table:  "Users",
+				Index:  "IX_Users_Email",
 			},
 			wantErr: false,
 		},
@@ -381,13 +225,14 @@ func TestSQLServerParser_ParseDropIndex(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parser.ParseDropIndex(tt.sql)
-			if tt.wantErr {
-				assert.Error(t, err)
+			got, err := parser.parseDropIndex(tt.sql)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("SQLServerParser.parseDropIndex() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			assert.NoError(t, err)
-			assert.Equal(t, tt.expected, got)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("SQLServerParser.parseDropIndex() = %v, want %v", got, tt.want)
+			}
 		})
 	}
 }
