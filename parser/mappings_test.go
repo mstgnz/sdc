@@ -221,9 +221,9 @@ func TestSQLiteMappings(t *testing.T) {
 
 func TestRegisterDefaultMappings(t *testing.T) {
 	converter := &Converter{
-		typeMappings: make(map[string]TypeMapping),
+		typeMappings: make(map[string][]TypeMapping),
 		charSets:     make(map[string]CharSet),
-		collations:   make(map[string]Collation),
+		collations:   make(map[string]CollationConfig),
 	}
 
 	converter.RegisterDefaultMappings()
