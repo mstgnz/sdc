@@ -67,6 +67,191 @@ type connectionMetrics struct {
 	queryDurations   sync.Map // stores time.Duration
 }
 
+// Statement represents a prepared SQL statement
+type Statement struct {
+	query string
+	args  []interface{}
+}
+
+// NewStatement creates a new SQL statement
+func NewStatement(query string, args ...interface{}) *Statement {
+	return &Statement{
+		query: query,
+		args:  args,
+	}
+}
+
+// ExecuteStatement executes a SQL statement with transaction support
+func (cm *ConnectionManager) ExecuteStatement(name string, stmt *Statement) (sql.Result, error) {
+	conn, err := cm.GetConnection(name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get connection: %w", err)
+	}
+
+	start := time.Now()
+	defer func() {
+		duration := time.Since(start)
+		cm.metrics.queryDurations.Store(stmt.query, duration)
+	}()
+
+	tx, err := conn.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	result, err := tx.Exec(stmt.query, stmt.args...)
+	if err != nil {
+		tx.Rollback()
+		return nil, fmt.Errorf("failed to execute statement: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return result, nil
+}
+
+// Migration represents a database migration
+type Migration struct {
+	ID          string
+	Description string
+	Up          []*Statement
+	Down        []*Statement
+}
+
+// MigrationManager handles database migrations
+type MigrationManager struct {
+	conn       *sql.DB
+	migrations []Migration
+}
+
+// NewMigrationManager creates a new migration manager
+func (cm *ConnectionManager) NewMigrationManager(name string) (*MigrationManager, error) {
+	conn, err := cm.GetConnection(name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get connection: %w", err)
+	}
+
+	// Create migrations table if not exists
+	_, err = conn.Exec(`
+		CREATE TABLE IF NOT EXISTS migrations (
+			id VARCHAR(255) PRIMARY KEY,
+			description TEXT,
+			applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create migrations table: %w", err)
+	}
+
+	return &MigrationManager{
+		conn:       conn,
+		migrations: make([]Migration, 0),
+	}, nil
+}
+
+// AddMigration adds a new migration
+func (mm *MigrationManager) AddMigration(migration Migration) {
+	mm.migrations = append(mm.migrations, migration)
+}
+
+// Migrate applies pending migrations
+func (mm *MigrationManager) Migrate() error {
+	for _, migration := range mm.migrations {
+		// Check if migration already applied
+		var count int
+		err := mm.conn.QueryRow("SELECT COUNT(*) FROM migrations WHERE id = ?", migration.ID).Scan(&count)
+		if err != nil {
+			return fmt.Errorf("failed to check migration status: %w", err)
+		}
+
+		if count > 0 {
+			continue
+		}
+
+		// Begin transaction
+		tx, err := mm.conn.Begin()
+		if err != nil {
+			return fmt.Errorf("failed to begin transaction: %w", err)
+		}
+
+		// Apply migration
+		for _, stmt := range migration.Up {
+			if _, err := tx.Exec(stmt.query, stmt.args...); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("failed to apply migration %s: %w", migration.ID, err)
+			}
+		}
+
+		// Record migration
+		_, err = tx.Exec("INSERT INTO migrations (id, description) VALUES (?, ?)",
+			migration.ID, migration.Description)
+		if err != nil {
+			tx.Rollback()
+			return fmt.Errorf("failed to record migration: %w", err)
+		}
+
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("failed to commit migration: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// Rollback rolls back the last migration
+func (mm *MigrationManager) Rollback() error {
+	var lastMigration struct {
+		ID string
+	}
+
+	err := mm.conn.QueryRow(`
+		SELECT id FROM migrations 
+		ORDER BY applied_at DESC 
+		LIMIT 1
+	`).Scan(&lastMigration.ID)
+	if err != nil {
+		return fmt.Errorf("failed to get last migration: %w", err)
+	}
+
+	// Find migration
+	var migration Migration
+	for _, m := range mm.migrations {
+		if m.ID == lastMigration.ID {
+			migration = m
+			break
+		}
+	}
+
+	// Begin transaction
+	tx, err := mm.conn.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	// Apply rollback
+	for _, stmt := range migration.Down {
+		if _, err := tx.Exec(stmt.query, stmt.args...); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("failed to rollback migration %s: %w", migration.ID, err)
+		}
+	}
+
+	// Remove migration record
+	_, err = tx.Exec("DELETE FROM migrations WHERE id = ?", migration.ID)
+	if err != nil {
+		tx.Rollback()
+		return fmt.Errorf("failed to remove migration record: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit rollback: %w", err)
+	}
+
+	return nil
+}
+
 // NewConnectionManager creates a new connection manager
 func NewConnectionManager() *ConnectionManager {
 	return &ConnectionManager{
@@ -216,6 +401,7 @@ func (cm *ConnectionManager) startHealthCheck(name string, conn *managedConnecti
 	for {
 		select {
 		case <-ticker.C:
+			conn.lastChecked = time.Now()
 			if err := conn.db.Ping(); err != nil {
 				cm.metrics.errorCount.Add(1)
 				// Attempt to reconnect
