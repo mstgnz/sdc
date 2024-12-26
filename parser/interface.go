@@ -1,11 +1,193 @@
 package parser
 
 import (
+	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/mstgnz/sdc"
 )
+
+// SecurityLevel represents the security level for parsing and validation
+type SecurityLevel int
+
+const (
+	// SecurityLevelLow minimal security checks
+	SecurityLevelLow SecurityLevel = iota
+	// SecurityLevelMedium standard security checks
+	SecurityLevelMedium
+	// SecurityLevelHigh strict security checks
+	SecurityLevelHigh
+)
+
+// SecurityOptions contains security-related configuration
+type SecurityOptions struct {
+	Level               SecurityLevel
+	DisableComments     bool     // Disable SQL comments
+	MaxIdentifierLength int      // Maximum length for identifiers
+	MaxQueryLength      int      // Maximum length for SQL queries
+	AllowedSchemas      []string // List of allowed schemas
+	DisallowedKeywords  []string // List of disallowed keywords
+	LogSensitiveData    bool     // Whether to log sensitive data
+}
+
+// DefaultSecurityOptions returns default security options
+func DefaultSecurityOptions() SecurityOptions {
+	return SecurityOptions{
+		Level:               SecurityLevelMedium,
+		DisableComments:     true,
+		MaxIdentifierLength: 64,
+		MaxQueryLength:      1000000,
+		AllowedSchemas:      []string{"public", "dbo", "main"},
+		DisallowedKeywords: []string{
+			"DELETE", "DROP", "TRUNCATE", "ALTER", "GRANT", "REVOKE",
+			"EXECUTE", "EXEC", "SHELL", "XP_", "SP_",
+		},
+		LogSensitiveData: false,
+	}
+}
+
+// validateIdentifierSafety checks if an identifier is safe to use
+func validateIdentifierSafety(name string, options SecurityOptions) error {
+	if name == "" {
+		return fmt.Errorf("empty identifier name")
+	}
+
+	if len(name) > options.MaxIdentifierLength {
+		return fmt.Errorf("identifier '%s' exceeds maximum length of %d", name, options.MaxIdentifierLength)
+	}
+
+	// Check for SQL injection patterns
+	dangerousPatterns := []string{
+		"--", "/*", "*/", "@@", "@",
+		"EXEC", "EXECUTE", "SP_", "XP_",
+		"WAITFOR", "DELAY", "SHUTDOWN",
+	}
+
+	upperName := strings.ToUpper(name)
+	for _, pattern := range dangerousPatterns {
+		if strings.Contains(upperName, pattern) {
+			return fmt.Errorf("identifier '%s' contains dangerous pattern: %s", name, pattern)
+		}
+	}
+
+	// Check for disallowed keywords
+	for _, keyword := range options.DisallowedKeywords {
+		if strings.EqualFold(name, keyword) {
+			return fmt.Errorf("identifier '%s' matches disallowed keyword", name)
+		}
+	}
+
+	// Validate first character
+	firstChar := rune(name[0])
+	if !unicode.IsLetter(firstChar) && firstChar != '_' {
+		return fmt.Errorf("identifier '%s' must start with a letter or underscore", name)
+	}
+
+	// Validate remaining characters
+	for _, ch := range name[1:] {
+		if !unicode.IsLetter(ch) && !unicode.IsDigit(ch) && ch != '_' && ch != '$' {
+			return fmt.Errorf("identifier '%s' contains invalid character: %c", name, ch)
+		}
+	}
+
+	return nil
+}
+
+// validateQuerySafety performs security checks on SQL queries
+func validateQuerySafety(sql string, options SecurityOptions) error {
+	if sql == "" {
+		return fmt.Errorf("empty SQL query")
+	}
+
+	if len(sql) > options.MaxQueryLength {
+		return fmt.Errorf("SQL query exceeds maximum length of %d", options.MaxQueryLength)
+	}
+
+	upperSQL := strings.ToUpper(sql)
+
+	// Check for dangerous patterns
+	dangerousPatterns := []string{
+		"EXECUTE", "EXEC", "SP_", "XP_",
+		"WAITFOR", "DELAY", "SHUTDOWN",
+		"BULK INSERT", "OPENROWSET", "OPENQUERY",
+	}
+
+	for _, pattern := range dangerousPatterns {
+		if strings.Contains(upperSQL, pattern) {
+			return fmt.Errorf("SQL query contains dangerous pattern: %s", pattern)
+		}
+	}
+
+	// Check for stacked queries
+	if strings.Count(sql, ";") > 1 {
+		return fmt.Errorf("multiple SQL statements are not allowed")
+	}
+
+	// Check for comments if disabled
+	if options.DisableComments {
+		if strings.Contains(sql, "--") || strings.Contains(sql, "/*") {
+			return fmt.Errorf("SQL comments are not allowed")
+		}
+	}
+
+	// Check for disallowed keywords based on security level
+	if options.Level >= SecurityLevelHigh {
+		for _, keyword := range options.DisallowedKeywords {
+			pattern := fmt.Sprintf(`\b%s\b`, keyword)
+			if matched, _ := regexp.MatchString(pattern, upperSQL); matched {
+				return fmt.Errorf("SQL query contains disallowed keyword: %s", keyword)
+			}
+		}
+	}
+
+	return nil
+}
+
+// sanitizeString removes potentially dangerous characters from a string
+func sanitizeString(s string) string {
+	// Remove common SQL injection characters
+	dangerous := []string{"'", "\"", ";", "--", "/*", "*/", "@@", "@"}
+	result := s
+
+	for _, ch := range dangerous {
+		result = strings.ReplaceAll(result, ch, "")
+	}
+
+	return result
+}
+
+// logSensitiveData logs sensitive data based on security options
+func logSensitiveData(data string, options SecurityOptions) {
+	if !options.LogSensitiveData {
+		// Mask sensitive data
+		maskedData := maskSensitiveData(data)
+		fmt.Printf("Masked sensitive data: %s\n", maskedData)
+		return
+	}
+
+	fmt.Printf("Original data: %s\n", data)
+}
+
+// maskSensitiveData masks sensitive information in a string
+func maskSensitiveData(data string) string {
+	// Mask common sensitive patterns
+	patterns := map[string]*regexp.Regexp{
+		"EMAIL":    regexp.MustCompile(`\b[\w\.-]+@[\w\.-]+\.\w+\b`),
+		"PASSWORD": regexp.MustCompile(`(?i)password\s*=\s*[^\s;]+`),
+		"API_KEY":  regexp.MustCompile(`(?i)(api[_-]?key|access[_-]?key|secret[_-]?key)\s*=\s*[^\s;]+`),
+		"TOKEN":    regexp.MustCompile(`(?i)(token|jwt|bearer)\s*=\s*[^\s;]+`),
+	}
+
+	result := data
+	for name, pattern := range patterns {
+		result = pattern.ReplaceAllString(result, fmt.Sprintf("[MASKED_%s]", name))
+	}
+
+	return result
+}
 
 // DatabaseType represents the type of database
 type DatabaseType string
@@ -158,8 +340,12 @@ var DatabaseInfoMap = map[DatabaseType]DatabaseInfo{
 
 // Parser interface defines the methods that must be implemented by all database parsers
 type Parser interface {
-	Parse(sql string) (*sdc.Table, error)
-	Convert(table *sdc.Table) (string, error)
+	// Parse converts SQL dump to Table structure with security validation
+	Parse(sql string, options SecurityOptions) (*sdc.Table, error)
+	// Convert transforms Table structure to target database format
+	Convert(table *sdc.Table, options SecurityOptions) (string, error)
+	// ValidateSchema validates the schema structure with security checks
+	ValidateSchema(table *sdc.Table, options SecurityOptions) error
 }
 
 // parseNumber safely parses a string to an integer

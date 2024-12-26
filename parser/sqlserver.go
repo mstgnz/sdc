@@ -24,10 +24,30 @@ type SQLServerParser struct {
 	dbInfo DatabaseInfo
 	// Add buffer pool for string builders to reduce allocations
 	builderPool strings.Builder
+	// Security options
+	securityOptions SecurityOptions
 }
 
-// Parse converts SQL Server dump to Entity structure
-func (p *SQLServerParser) Parse(sql string) (*sdc.Entity, error) {
+// NewSQLServerParser creates a new SQL Server parser with default security options
+func NewSQLServerParser() *SQLServerParser {
+	return &SQLServerParser{
+		dbInfo:          DatabaseInfoMap[SQLServer],
+		securityOptions: DefaultSecurityOptions(),
+	}
+}
+
+// SetSecurityOptions sets custom security options
+func (p *SQLServerParser) SetSecurityOptions(options SecurityOptions) {
+	p.securityOptions = options
+}
+
+// Parse converts SQL Server dump to Entity structure with security validation
+func (p *SQLServerParser) Parse(sql string, options SecurityOptions) (*sdc.Entity, error) {
+	// Validate query safety
+	if err := validateQuerySafety(sql, options); err != nil {
+		return nil, fmt.Errorf("security validation failed: %v", err)
+	}
+
 	entity := &sdc.Entity{
 		Tables: make([]*sdc.Table, 0), // Pre-allocate slice
 	}
@@ -50,6 +70,12 @@ func (p *SQLServerParser) Parse(sql string) (*sdc.Entity, error) {
 			if err != nil {
 				return nil, err
 			}
+
+			// Validate schema and identifiers
+			if err := p.ValidateSchema(table, options); err != nil {
+				return nil, fmt.Errorf("schema validation failed: %v", err)
+			}
+
 			entity.Tables = append(entity.Tables, table)
 		}
 	}
@@ -57,8 +83,87 @@ func (p *SQLServerParser) Parse(sql string) (*sdc.Entity, error) {
 	return entity, nil
 }
 
-// Convert transforms Entity structure to SQL Server format with optimized string handling
-func (p *SQLServerParser) Convert(entity *sdc.Entity) (string, error) {
+// ValidateSchema validates the schema structure with security checks
+func (p *SQLServerParser) ValidateSchema(table *sdc.Table, options SecurityOptions) error {
+	// Validate schema name
+	if table.Schema != "" {
+		if err := validateIdentifierSafety(table.Schema, options); err != nil {
+			return fmt.Errorf("invalid schema name: %v", err)
+		}
+
+		// Check if schema is in allowed list
+		schemaAllowed := false
+		for _, allowedSchema := range options.AllowedSchemas {
+			if strings.EqualFold(table.Schema, allowedSchema) {
+				schemaAllowed = true
+				break
+			}
+		}
+		if !schemaAllowed {
+			return fmt.Errorf("schema '%s' is not in the allowed list", table.Schema)
+		}
+	}
+
+	// Validate table name
+	if err := validateIdentifierSafety(table.Name, options); err != nil {
+		return fmt.Errorf("invalid table name: %v", err)
+	}
+
+	// Validate column names and properties
+	for _, column := range table.Columns {
+		if err := validateIdentifierSafety(column.Name, options); err != nil {
+			return fmt.Errorf("invalid column name: %v", err)
+		}
+
+		// Log sensitive column names
+		if strings.Contains(strings.ToLower(column.Name), "password") ||
+			strings.Contains(strings.ToLower(column.Name), "secret") ||
+			strings.Contains(strings.ToLower(column.Name), "key") {
+			logSensitiveData(column.Name, options)
+		}
+
+		// Validate default values
+		if column.Default != "" {
+			if err := validateQuerySafety(column.Default, options); err != nil {
+				return fmt.Errorf("invalid default value: %v", err)
+			}
+		}
+	}
+
+	// Validate constraint names
+	for _, constraint := range table.Constraints {
+		if constraint.Name != "" {
+			if err := validateIdentifierSafety(constraint.Name, options); err != nil {
+				return fmt.Errorf("invalid constraint name: %v", err)
+			}
+		}
+
+		// Validate referenced table and columns in foreign keys
+		if constraint.Type == "FOREIGN KEY" {
+			if err := validateIdentifierSafety(constraint.RefTable, options); err != nil {
+				return fmt.Errorf("invalid referenced table name: %v", err)
+			}
+
+			for _, col := range constraint.RefColumns {
+				if err := validateIdentifierSafety(col, options); err != nil {
+					return fmt.Errorf("invalid referenced column name: %v", err)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// Convert transforms Entity structure to SQL Server format with security validation
+func (p *SQLServerParser) Convert(entity *sdc.Entity, options SecurityOptions) (string, error) {
+	// Validate entity before conversion
+	for _, table := range entity.Tables {
+		if err := p.ValidateSchema(table, options); err != nil {
+			return "", fmt.Errorf("schema validation failed: %v", err)
+		}
+	}
+
 	// Reset and reuse string builder
 	p.builderPool.Reset()
 	result := &p.builderPool
@@ -66,19 +171,19 @@ func (p *SQLServerParser) Convert(entity *sdc.Entity) (string, error) {
 	for _, table := range entity.Tables {
 		// CREATE TABLE statement
 		result.WriteString("CREATE TABLE [")
-		result.WriteString(table.Name)
+		result.WriteString(sanitizeString(table.Name))
 		result.WriteString("] (\n")
 
 		// Columns
 		for i, column := range table.Columns {
 			result.WriteString("    [")
-			result.WriteString(column.Name)
+			result.WriteString(sanitizeString(column.Name))
 			result.WriteString("] ")
 			result.WriteString(p.convertDataType(column.DataType))
 
 			if column.Collation != "" {
 				result.WriteString(" COLLATE ")
-				result.WriteString(column.Collation)
+				result.WriteString(sanitizeString(column.Collation))
 			}
 
 			if !column.IsNullable {
@@ -87,7 +192,11 @@ func (p *SQLServerParser) Convert(entity *sdc.Entity) (string, error) {
 
 			if column.Default != "" {
 				result.WriteString(" DEFAULT ")
-				result.WriteString(column.Default)
+				// Validate and sanitize default value
+				if err := validateQuerySafety(column.Default, options); err != nil {
+					return "", fmt.Errorf("invalid default value: %v", err)
+				}
+				result.WriteString(sanitizeString(column.Default))
 			}
 
 			if column.Identity {
@@ -117,10 +226,97 @@ func (p *SQLServerParser) Convert(entity *sdc.Entity) (string, error) {
 			}
 		}
 
+		// Add constraints
+		if len(table.Constraints) > 0 {
+			result.WriteString(",\n")
+			for i, constraint := range table.Constraints {
+				result.WriteString("    ")
+				if constraint.Name != "" {
+					result.WriteString("CONSTRAINT [")
+					result.WriteString(sanitizeString(constraint.Name))
+					result.WriteString("] ")
+				}
+
+				switch constraint.Type {
+				case "PRIMARY KEY":
+					result.WriteString("PRIMARY KEY")
+					if constraint.Clustered {
+						result.WriteString(" CLUSTERED")
+					} else if constraint.NonClustered {
+						result.WriteString(" NONCLUSTERED")
+					}
+					result.WriteString(" (")
+					for j, col := range constraint.Columns {
+						if j > 0 {
+							result.WriteString(", ")
+						}
+						result.WriteString("[")
+						result.WriteString(sanitizeString(col))
+						result.WriteString("]")
+					}
+					result.WriteString(")")
+
+				case "FOREIGN KEY":
+					result.WriteString("FOREIGN KEY (")
+					for j, col := range constraint.Columns {
+						if j > 0 {
+							result.WriteString(", ")
+						}
+						result.WriteString("[")
+						result.WriteString(sanitizeString(col))
+						result.WriteString("]")
+					}
+					result.WriteString(") REFERENCES [")
+					result.WriteString(sanitizeString(constraint.RefTable))
+					result.WriteString("] (")
+					for j, col := range constraint.RefColumns {
+						if j > 0 {
+							result.WriteString(", ")
+						}
+						result.WriteString("[")
+						result.WriteString(sanitizeString(col))
+						result.WriteString("]")
+					}
+					result.WriteString(")")
+
+					if constraint.OnDelete != "" {
+						result.WriteString(" ON DELETE ")
+						result.WriteString(sanitizeString(constraint.OnDelete))
+					}
+					if constraint.OnUpdate != "" {
+						result.WriteString(" ON UPDATE ")
+						result.WriteString(sanitizeString(constraint.OnUpdate))
+					}
+
+				case "UNIQUE":
+					result.WriteString("UNIQUE")
+					if constraint.Clustered {
+						result.WriteString(" CLUSTERED")
+					} else if constraint.NonClustered {
+						result.WriteString(" NONCLUSTERED")
+					}
+					result.WriteString(" (")
+					for j, col := range constraint.Columns {
+						if j > 0 {
+							result.WriteString(", ")
+						}
+						result.WriteString("[")
+						result.WriteString(sanitizeString(col))
+						result.WriteString("]")
+					}
+					result.WriteString(")")
+				}
+
+				if i < len(table.Constraints)-1 {
+					result.WriteString(",\n")
+				}
+			}
+		}
+
 		// FileGroup
 		if table.FileGroup != "" {
 			result.WriteString(") ON [")
-			result.WriteString(table.FileGroup)
+			result.WriteString(sanitizeString(table.FileGroup))
 			result.WriteString("]")
 		} else {
 			result.WriteString(")")
