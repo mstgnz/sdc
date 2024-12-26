@@ -1,32 +1,32 @@
 # Build aşaması
 FROM golang:1.23-bullseye AS builder
 
-# Gerekli build araçlarını yükle
+# Install the necessary build tools
 RUN apt-get update && apt-get install -y git
 
-# Çalışma dizinini ayarla
+# Set working directory
 WORKDIR /app
 
-# Go modüllerini kopyala ve indir
+# Copy go.mod and go.sum
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Kaynak kodları kopyala
+# Copy source code
 COPY . .
 
-# Uygulamayı derle
+# Build the application
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o sdc .
 
-# Çalışma aşaması
+# Run stage
 FROM debian:bullseye-slim
 
-# SSL sertifikaları için gerekli paketleri yükle
+# Install necessary packages for SSL certificates
 RUN apt-get update && apt-get install -y ca-certificates
 
 WORKDIR /root/
 
-# Builder aşamasından derlenmiş uygulamayı kopyala
+# Copy the built application from the builder stage
 COPY --from=builder /app/sdc .
 
-# Uygulamayı çalıştır
+# Run the application
 CMD ["./sdc"] 
