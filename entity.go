@@ -3,193 +3,260 @@ package sdc
 // Entity represents the database structure.
 // It contains all tables and their relationships in the database.
 type Entity struct {
-	Tables []*Table // List of tables in the database
+	Tables     []*Table     // List of tables in the database
+	Sequences  []*Sequence  // List of sequences in the database
+	Views      []*View      // List of views in the database
+	Functions  []*Function  // List of functions in the database
+	Procedures []*Procedure // List of stored procedures in the database
+	Triggers   []*Trigger   // List of triggers in the database
+	Schemas    []*Schema    // List of schemas in the database
+}
+
+// Schema represents a database schema structure
+type Schema struct {
+	Name       string       // Schema name
+	Owner      string       // Schema owner
+	Comment    string       // Schema comment
+	Privileges []*Privilege // List of privileges on the schema
+}
+
+// Sequence represents a database sequence structure
+type Sequence struct {
+	Name       string       // Sequence name
+	Schema     string       // Schema name
+	Start      int64        // Start value
+	Increment  int64        // Increment value
+	MinValue   int64        // Minimum value
+	MaxValue   int64        // Maximum value
+	Cache      int64        // Cache size
+	Cycle      bool         // Whether sequence should cycle
+	Owner      string       // Sequence owner
+	Comment    string       // Sequence comment
+	Privileges []*Privilege // List of privileges on the sequence
+}
+
+// View represents a database view structure
+type View struct {
+	Name         string       // View name
+	Schema       string       // Schema name
+	Query        string       // View query
+	Materialized bool         // Whether this is a materialized view
+	Owner        string       // View owner
+	Comment      string       // View comment
+	Privileges   []*Privilege // List of privileges on the view
+}
+
+// Function represents a database function structure
+type Function struct {
+	Name       string       // Function name
+	Schema     string       // Schema name
+	Arguments  []*Argument  // List of function arguments
+	Returns    string       // Return type
+	Body       string       // Function body
+	Language   string       // Function language
+	Owner      string       // Function owner
+	Comment    string       // Function comment
+	Privileges []*Privilege // List of privileges on the function
+}
+
+// Procedure represents a stored procedure structure
+type Procedure struct {
+	Name       string       // Procedure name
+	Schema     string       // Schema name
+	Arguments  []*Argument  // List of procedure arguments
+	Body       string       // Procedure body
+	Language   string       // Procedure language
+	Owner      string       // Procedure owner
+	Comment    string       // Procedure comment
+	Privileges []*Privilege // List of privileges on the procedure
+}
+
+// Trigger represents a trigger definition.
+// It defines automated actions to be taken on specific table events.
+type Trigger struct {
+	Name       string       // Trigger name
+	Schema     string       // Schema name
+	Table      string       // Table name
+	Event      string       // Triggering event (INSERT/UPDATE/DELETE)
+	Timing     string       // Trigger timing (BEFORE/AFTER/INSTEAD OF)
+	Body       string       // Trigger body/function
+	Condition  string       // Conditional expression (WHEN clause)
+	Owner      string       // Owner of the trigger
+	Comment    string       // Trigger comment or description
+	Privileges []*Privilege // List of privileges on the trigger
+}
+
+// Argument represents a function/procedure argument structure
+type Argument struct {
+	Name     string    // Argument name
+	DataType *DataType // Argument data type
+	Mode     string    // Argument mode (IN/OUT/INOUT)
+	Default  string    // Default value
+}
+
+// Privilege represents a privilege structure
+type Privilege struct {
+	Grantee     string // Privilege grantee
+	Privilege   string // Privilege type
+	Grantor     string // Privilege grantor
+	GrantOption bool   // Whether grant option is included
 }
 
 // Table represents a database table structure.
 // It contains all information about a table including columns, constraints,
 // indexes, and various database-specific features.
 type Table struct {
-	Schema          string            // Schema name (database/namespace)
-	Name            string            // Table name
-	Columns         []*Column         // List of columns in the table
-	PrimaryKey      []string          // List of column names that form the primary key
-	ForeignKeys     []*ForeignKey     // List of foreign key constraints
-	Indexes         []*Index          // List of indexes on the table
-	Checks          []*Check          // List of check constraints
-	Exclusions      []*Exclusion      // List of exclusion constraints (PostgreSQL)
-	Engine          string            // Storage engine (MySQL specific)
-	TableSpace      string            // Tablespace name (Oracle/PostgreSQL)
-	CharacterSet    string            // Default character set for the table
-	Collation       string            // Default collation for the table
-	Comment         string            // Table comment or description
-	IsTemporary     bool              // Whether this is a temporary table
-	IsUnlogged      bool              // Whether this is an unlogged table (PostgreSQL)
-	Partition       *Partition        // Partition information
-	Storage         map[string]string // Storage parameters (WITH clause)
-	Inherits        []string          // List of parent tables (PostgreSQL INHERITS)
-	Like            *Like             // LIKE template specification (PostgreSQL)
-	ReplicaIdentity string            // Replica identity setting (PostgreSQL)
-	AccessMethod    string            // Table access method (PostgreSQL)
-	RowSecurity     bool              // Whether row level security is enabled
-	Options         map[string]string // Additional table options
+	Name        string            // Table name
+	Schema      string            // Schema name (database/namespace)
+	Columns     []*Column         // List of columns in the table
+	Constraints []*Constraint     // List of constraints (PRIMARY KEY, FOREIGN KEY, etc.)
+	Indexes     []*Index          // List of indexes on the table
+	FileGroup   string            // FileGroup name (SQL Server specific)
+	Options     map[string]string // Additional table options
+	Comment     string            // Table comment or description
+	Collation   string            // Default collation for the table
+	Inherits    []string          // List of parent tables (PostgreSQL INHERITS)
+	Partitions  []*Partition      // Partition information
+	Like        *Like             // LIKE template specification
+	Unlogged    bool              // Whether this is an unlogged table
+	Temporary   bool              // Whether this is a temporary table
+	IfNotExists bool              // Whether to use IF NOT EXISTS clause
 }
 
-// Column represents a database column structure.
-// It contains all information about a column including its data type,
-// constraints, and various database-specific features.
-type Column struct {
-	Name         string     // Column name
-	DataType     *DataType  // Column data type information
-	IsNullable   bool       // Whether NULL values are allowed
-	IsUnsigned   bool       // Whether the numeric type is unsigned
-	Default      string     // Default value expression
-	Identity     *Identity  // Identity/Generated column information
-	Generated    *Generated // Generated column information
-	IsComputed   bool       // Whether this is a computed column
-	ComputedExpr string     // Expression for computed column
-	IsPersisted  bool       // Whether computed column is persisted
-	IsSparse     bool       // Whether this is a sparse column (SQL Server)
-	CharacterSet string     // Column-specific character set
-	Collation    string     // Column-specific collation
-	Comment      string     // Column comment or description
-	Extra        string     // Additional column attributes
-	Storage      string     // Storage directive (PostgreSQL)
-	Compression  string     // Compression method
-	Statistics   int        // Statistics target (PostgreSQL)
+// Partition represents table partitioning information.
+// It defines how table data is partitioned across multiple storage units.
+type Partition struct {
+	Name      string   // Partition name
+	Type      string   // Partition type (RANGE/LIST/HASH)
+	Columns   []string // Partitioning columns
+	Values    []string // Partition values/bounds
+	FileGroup string   // FileGroup for the partition
 }
 
-// Generated represents a generated/computed column specification.
-// It defines how the column value is generated and stored.
-type Generated struct {
-	Expression string // The expression that generates the column value
-	Type       string // Storage type (STORED/VIRTUAL)
-	Scope      string // Generation scope (ALWAYS/BY DEFAULT)
-}
-
-// DataType represents a column's data type specification.
-// It includes all type-specific information including precision,
-// scale, and various type modifiers.
-type DataType struct {
-	Name          string   // Base type name
-	Length        int      // Type length (e.g., VARCHAR(255))
-	Precision     int      // Numeric precision
-	Scale         int      // Numeric scale
-	IsArray       bool     // Whether this is an array type
-	ArrayDims     []int    // Array dimensions
-	TimeZone      bool     // Whether type includes timezone
-	IntervalField string   // Interval type field
-	IsCustom      bool     // Whether this is a custom/user-defined type
-	TypeModifiers []string // Additional type modifiers
-}
-
-// Identity represents identity/generated column properties.
-// It defines how the column values are automatically generated.
-type Identity struct {
-	Generation string // Generation type (ALWAYS/BY DEFAULT)
-	Start      int64  // Starting value
-	Increment  int64  // Increment value
-	MinValue   *int64 // Minimum allowed value
-	MaxValue   *int64 // Maximum allowed value
-	Cache      *int64 // Number of values to cache
-	Cycle      bool   // Whether to cycle when limits are reached
-}
-
-// Constraint represents common properties for all constraint types.
-// It serves as a base for specific constraint implementations.
-type Constraint struct {
-	Name              string // Constraint name
-	Type              string // Constraint type (PRIMARY KEY, FOREIGN KEY, etc.)
-	Deferrable        bool   // Whether constraint check can be deferred
-	InitiallyDeferred bool   // Whether constraint is initially deferred
-	NoInherit         bool   // Whether constraint is not inherited
-	Validated         bool   // Whether constraint is validated
-}
-
-// ForeignKey represents a foreign key constraint.
-// It defines relationships between tables through their columns.
-type ForeignKey struct {
-	Constraint                 // Embedded constraint properties
-	Columns           []string // Source columns
-	ReferencedTable   string   // Referenced table name
-	ReferencedColumns []string // Referenced columns
-	OnDelete          string   // Action on delete (CASCADE, SET NULL, etc.)
-	OnUpdate          string   // Action on update
-	Match             string   // Match type (FULL/PARTIAL/SIMPLE)
+// Like represents a LIKE clause specification.
+// It defines which properties to inherit from a template table.
+type Like struct {
+	Table         string   // Template table name
+	Including     []string // Properties to include
+	Excluding     []string // Properties to exclude
+	WithDefaults  bool     // Include default values
+	WithIndexes   bool     // Include indexes
+	WithStorage   bool     // Include storage parameters
+	WithComments  bool     // Include comments
+	WithCollation bool     // Include collation
 }
 
 // Index represents an index structure.
 // It defines how table data is indexed for faster access.
 type Index struct {
 	Name           string            // Index name
+	Schema         string            // Schema name
+	Table          string            // Table name
 	Columns        []string          // Indexed columns
-	IsUnique       bool              // Whether this is a unique index
-	IsClustered    bool              // Whether this is a clustered index
-	Type           string            // Index type (BTREE/HASH/GiST etc.)
-	TableSpace     string            // Index tablespace
-	Comment        string            // Index comment
-	IncludeColumns []string          // Included (covered) columns
+	Unique         bool              // Whether this is a unique index
+	Clustered      bool              // Whether this is a clustered index
+	NonClustered   bool              // Whether this is a non-clustered index
+	FileGroup      string            // FileGroup for the index
 	Filter         string            // Filter condition
-	Predicate      string            // Partial index predicate
-	OperatorClass  []string          // Operator classes for index
-	Storage        map[string]string // Index storage parameters
-	IsConcurrent   bool              // Whether index was created concurrently
-	NullsOrder     string            // NULL ordering (NULLS FIRST/LAST)
+	IncludeColumns []string          // Included (covered) columns
+	Options        map[string]string // Index options
 }
 
-// Check represents a check constraint.
-// It defines conditions that must be true for all rows.
-type Check struct {
+// DataType represents a column's data type specification.
+// It includes all type-specific information including precision,
+// scale, and various type modifiers.
+type DataType struct {
+	Name      string // Base type name
+	Length    int    // Type length (e.g., VARCHAR(255))
+	Precision int    // Numeric precision
+	Scale     int    // Numeric scale
+}
+
+// ForeignKey represents a foreign key constraint.
+// It defines relationships between tables through their columns.
+type ForeignKey struct {
 	Constraint        // Embedded constraint properties
-	Condition  string // Check condition expression
+	Name       string // Constraint name
+	Column     string // Source column
+	RefTable   string // Referenced table name
+	RefColumn  string // Referenced column
+	OnDelete   string // Action on delete (CASCADE, SET NULL, etc.)
+	OnUpdate   string // Action on update
+	Clustered  bool   // Whether this is a clustered foreign key
+	FileGroup  string // FileGroup for the foreign key
 }
 
-// Exclusion represents an exclusion constraint.
-// It ensures that specific operations between rows yield no matches.
-type Exclusion struct {
-	Constraint                      // Embedded constraint properties
-	Elements     []ExclusionElement // Exclusion elements
-	AccessMethod string             // Index access method
+// Column represents a database column structure.
+// It contains all information about a column including its data type,
+// constraints, and various database-specific features.
+type Column struct {
+	Name          string      // Column name
+	DataType      *DataType   // Column data type information
+	Length        int         // Type length
+	Precision     int         // Numeric precision
+	Scale         int         // Numeric scale
+	IsNullable    bool        // Whether NULL values are allowed (parser compatibility)
+	Nullable      bool        // Whether NULL values are allowed
+	Default       string      // Default value expression
+	AutoIncrement bool        // Whether column auto-increments
+	PrimaryKey    bool        // Whether column is part of primary key
+	Unique        bool        // Whether column has unique constraint
+	Check         string      // Check constraint expression
+	ForeignKey    *ForeignKey // Foreign key reference
+	Comment       string      // Column comment or description
+	Collation     string      // Column-specific collation
+	Sparse        bool        // Whether this is a sparse column
+	Computed      bool        // Whether this is a computed column
+	ComputedExpr  string      // Expression for computed column
+	Identity      bool        // Whether this is an identity column
+	IdentitySeed  int64       // Identity seed value
+	IdentityIncr  int64       // Identity increment value
+	FileStream    bool        // Whether this is a FileStream column
+	FileGroup     string      // FileGroup for the column
+	RowGuidCol    bool        // Whether this is a rowguid column
+	Persisted     bool        // Whether computed column is persisted
+	Extra         string      // Additional column attributes (parser compatibility)
 }
 
-// ExclusionElement represents an element in an exclusion constraint.
-// It defines a column-operator pair for exclusion checking.
-type ExclusionElement struct {
-	Column   string // Column name
-	Operator string // Exclusion operator
+// Constraint represents a table constraint.
+// It defines various types of constraints that can be applied to a table.
+type Constraint struct {
+	Name         string   // Constraint name
+	Type         string   // Constraint type (PRIMARY KEY, FOREIGN KEY, UNIQUE, CHECK)
+	Columns      []string // Constrained columns
+	RefTable     string   // Referenced table (for foreign keys)
+	RefColumns   []string // Referenced columns (for foreign keys)
+	OnDelete     string   // Action on delete (for foreign keys)
+	OnUpdate     string   // Action on update (for foreign keys)
+	Check        string   // Check constraint expression
+	Clustered    bool     // Whether this is a clustered constraint
+	NonClustered bool     // Whether this is a non-clustered constraint
+	FileGroup    string   // FileGroup for the constraint
 }
 
-// Like represents a LIKE clause specification.
-// It defines which properties to inherit from a template table.
-type Like struct {
-	Table              string // Template table name
-	IncludeAll         bool   // Include all properties
-	IncludeDefaults    bool   // Include default values
-	IncludeConstraints bool   // Include constraints
-	IncludeIndexes     bool   // Include indexes
-	IncludeStorage     bool   // Include storage parameters
-	IncludeComments    bool   // Include comments
+// AlterTable represents an ALTER TABLE statement structure
+type AlterTable struct {
+	Schema     string      // Schema name
+	Table      string      // Table name
+	Action     string      // Action to perform
+	Column     *Column     // Column to alter
+	NewName    string      // New name for rename operations
+	Constraint *Constraint // Constraint to add/modify
 }
 
-// Partition represents table partitioning information.
-// It defines how table data is partitioned across multiple storage units.
-type Partition struct {
-	Type         string     // Partition type (RANGE/LIST/HASH)
-	Columns      []string   // Partitioning columns
-	Strategy     string     // Partitioning strategy
-	SubPartition *Partition // Sub-partition specification
-	Bounds       []string   // Partition bounds/values
+// DropTable represents a DROP TABLE statement structure
+type DropTable struct {
+	Schema   string // Schema name
+	Table    string // Table name
+	IfExists bool   // Whether to use IF EXISTS clause
+	Cascade  bool   // Whether to cascade the drop operation
 }
 
-// Trigger represents a trigger definition.
-// It defines automated actions to be taken on specific table events.
-type Trigger struct {
-	Name       string   // Trigger name
-	Event      string   // Triggering event (INSERT/UPDATE/DELETE)
-	Timing     string   // Trigger timing (BEFORE/AFTER/INSTEAD OF)
-	Function   string   // Trigger function
-	ForEach    string   // Execution scope (ROW/STATEMENT)
-	When       string   // Conditional expression
-	Columns    []string // Columns that trigger the action
-	Referenced []string // Referenced tables in trigger
+// DropIndex represents a DROP INDEX statement structure
+type DropIndex struct {
+	Schema   string // Schema name
+	Table    string // Table name
+	Index    string // Index name
+	IfExists bool   // Whether to use IF EXISTS clause
+	Cascade  bool   // Whether to cascade the drop operation
 }
