@@ -1,9 +1,9 @@
--- Sequence tanımlamaları
+-- Sequence declarations
 CREATE SEQUENCE users_seq START WITH 1 INCREMENT BY 1;
 CREATE SEQUENCE products_seq START WITH 1 INCREMENT BY 1;
 CREATE SEQUENCE orders_seq START WITH 1 INCREMENT BY 1;
 
--- Users tablosu
+-- Users table
 CREATE TABLE users (
     id NUMBER DEFAULT users_seq.NEXTVAL PRIMARY KEY,
     username VARCHAR2(50) NOT NULL,
@@ -14,7 +14,7 @@ CREATE TABLE users (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Products tablosu
+-- Products table
 CREATE TABLE products (
     id NUMBER DEFAULT products_seq.NEXTVAL PRIMARY KEY,
     name VARCHAR2(100) NOT NULL,
@@ -23,13 +23,13 @@ CREATE TABLE products (
         CONSTRAINT products_price_chk CHECK (price >= 0),
     stock NUMBER DEFAULT 0 
         CONSTRAINT products_stock_chk CHECK (stock >= 0),
-    metadata CLOB, -- JSON verisi için
+    metadata CLOB, -- JSON data
     is_active NUMBER(1) DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Orders tablosu
+-- Orders table
 CREATE TABLE orders (
     id NUMBER DEFAULT orders_seq.NEXTVAL PRIMARY KEY,
     user_id NUMBER NOT NULL,
@@ -40,12 +40,12 @@ CREATE TABLE orders (
     shipping_address CLOB NOT NULL,
     order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     delivery_date TIMESTAMP,
-    metadata CLOB, -- JSON verisi için
+    metadata CLOB, -- JSON data
     CONSTRAINT orders_user_id_fkey FOREIGN KEY (user_id) 
         REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Order Items tablosu (çoka-çok ilişki)
+-- Order Items table (many-to-many relationship)
 CREATE TABLE order_items (
     order_id NUMBER NOT NULL,
     product_id NUMBER NOT NULL,
@@ -61,7 +61,7 @@ CREATE TABLE order_items (
         REFERENCES products(id)
 );
 
--- Order History tablosu (partition örneği)
+-- Order History table (partition example)
 CREATE TABLE order_history (
     id NUMBER NOT NULL,
     order_id NUMBER NOT NULL,
@@ -74,14 +74,14 @@ PARTITION BY RANGE (changed_at) (
     PARTITION order_history_2024 VALUES LESS THAN (TIMESTAMP '2025-01-01 00:00:00')
 );
 
--- İndeksler
+-- Indexes
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_products_name ON products(name);
 CREATE INDEX idx_orders_user_id ON orders(user_id);
 CREATE INDEX idx_orders_status ON orders(status);
 CREATE INDEX idx_order_items_product ON order_items(product_id);
 
--- View örneği
+-- View example
 CREATE OR REPLACE VIEW order_summary AS
 SELECT 
     o.id as order_id,
@@ -95,14 +95,14 @@ JOIN users u ON o.user_id = u.id
 JOIN order_items oi ON o.id = oi.order_id
 GROUP BY o.id, u.username, o.total_amount, o.status, o.order_date;
 
--- Tablo ve kolon açıklamaları
-COMMENT ON TABLE users IS 'Kullanıcı bilgilerinin tutulduğu tablo';
-COMMENT ON COLUMN users.email IS 'Kullanıcı email adresi';
-COMMENT ON TABLE products IS 'Ürün bilgilerinin tutulduğu tablo';
-COMMENT ON TABLE orders IS 'Sipariş bilgilerinin tutulduğu tablo';
-COMMENT ON TABLE order_items IS 'Sipariş detaylarının tutulduğu tablo';
+-- Table and column comments
+COMMENT ON TABLE users IS 'Table storing user information';
+COMMENT ON COLUMN users.email IS 'User email address';
+COMMENT ON TABLE products IS 'Table storing product information';
+COMMENT ON TABLE orders IS 'Table storing order information';
+COMMENT ON TABLE order_items IS 'Table storing order item details';
 
--- Trigger örneği (updated_at alanını güncellemek için)
+-- Trigger example (for updating updated_at field)
 CREATE OR REPLACE TRIGGER users_update_trigger
     BEFORE UPDATE ON users
     FOR EACH ROW
@@ -119,8 +119,8 @@ BEGIN
 END;
 /
 
--- DDL Komut Örnekleri
--- CREATE DATABASE (Oracle'da SYSDBA olarak yapılır)
+-- DDL Command Examples
+-- CREATE DATABASE (as SYSDBA)
 -- CREATE DATABASE ecommerce
 --     USER SYS IDENTIFIED BY password
 --     USER SYSTEM IDENTIFIED BY password
@@ -139,7 +139,7 @@ END;
 --     DEFAULT TEMPORARY TABLESPACE temp
 --     UNDO TABLESPACE undotbs1;
 
--- CREATE TABLESPACE örneği
+-- CREATE TABLESPACE example
 CREATE TABLESPACE ecommerce_data
     DATAFILE 'path/ecommerce_data01.dbf' SIZE 100M REUSE
     AUTOEXTEND ON NEXT 100M MAXSIZE UNLIMITED
@@ -148,96 +148,53 @@ CREATE TABLESPACE ecommerce_data
     EXTENT MANAGEMENT LOCAL
     SEGMENT SPACE MANAGEMENT AUTO;
 
--- DROP TABLESPACE örneği (yorum satırı olarak)
+-- DROP TABLESPACE example (commented)
 -- DROP TABLESPACE ecommerce_data INCLUDING CONTENTS AND DATAFILES;
 
--- ALTER TABLESPACE örneği
+-- ALTER TABLESPACE example
 ALTER TABLESPACE ecommerce_data
     ADD DATAFILE 'path/ecommerce_data02.dbf' SIZE 100M
     AUTOEXTEND ON NEXT 100M MAXSIZE UNLIMITED;
 
--- CREATE USER örneği
+-- CREATE USER example
 CREATE USER app_user IDENTIFIED BY password
     DEFAULT TABLESPACE ecommerce_data
     TEMPORARY TABLESPACE temp
     QUOTA UNLIMITED ON ecommerce_data;
 
--- ALTER USER örneği
+-- ALTER USER example
 ALTER USER app_user
     IDENTIFIED BY new_password
     ACCOUNT UNLOCK;
 
--- DROP USER örneği (yorum satırı olarak)
+-- DROP USER example (commented)
 -- DROP USER app_user CASCADE;
 
--- GRANT örnekleri
+-- GRANT examples
 GRANT CREATE SESSION TO app_user;
 GRANT CREATE TABLE, CREATE VIEW, CREATE SEQUENCE TO app_user;
 GRANT SELECT ON users TO app_user;
 GRANT INSERT, UPDATE ON products TO app_user;
 
--- REVOKE örnekleri
+-- REVOKE examples
 REVOKE INSERT, UPDATE ON products FROM app_user;
 
--- CREATE ROLE örneği
+-- CREATE ROLE example
 CREATE ROLE app_read_role;
 GRANT SELECT ANY TABLE TO app_read_role;
 GRANT app_read_role TO app_user;
 
--- DROP ROLE örneği (yorum satırı olarak)
+-- DROP ROLE example (commented)
 -- DROP ROLE app_read_role;
 
--- ALTER TABLE örnekleri
+-- ALTER TABLE examples
 ALTER TABLE users 
     ADD (
         phone VARCHAR2(20),
         address CLOB
     );
 
-ALTER TABLE users
-    ADD CONSTRAINT users_phone_unique UNIQUE (phone);
-
-ALTER TABLE products 
-    MODIFY (
-        price NUMBER(12,2) NOT NULL,
-        stock NUMBER DEFAULT 100
-    );
-
-ALTER TABLE products
-    ADD CONSTRAINT products_name_unique UNIQUE (name);
-
--- DROP TABLE örnekleri (yorum satırı olarak)
--- DROP TABLE order_items CASCADE CONSTRAINTS;
--- DROP TABLE orders CASCADE CONSTRAINTS;
--- DROP TABLE products CASCADE CONSTRAINTS;
--- DROP TABLE users CASCADE CONSTRAINTS;
-
--- TRUNCATE örneği (yorum satırı olarak)
--- TRUNCATE TABLE order_items;
--- TRUNCATE TABLE orders;
--- TRUNCATE TABLE products;
--- TRUNCATE TABLE users;
-
--- CREATE INDEX örnekleri
-CREATE INDEX idx_users_username ON users(username)
-    TABLESPACE ecommerce_data;
-
-CREATE INDEX idx_products_price ON products(price)
-    TABLESPACE ecommerce_data;
-
-CREATE INDEX idx_orders_created ON orders(order_date)
-    TABLESPACE ecommerce_data;
-
--- DROP INDEX örnekleri (yorum satırı olarak)
--- DROP INDEX idx_users_username;
--- DROP INDEX idx_products_price;
--- DROP INDEX idx_orders_created;
-
--- ALTER INDEX örneği
-ALTER INDEX idx_users_email RENAME TO idx_users_email_new;
-ALTER INDEX idx_users_email_new REBUILD;
-
--- CREATE MATERIALIZED VIEW örneği
+-- CREATE MATERIALIZED VIEW example
 CREATE MATERIALIZED VIEW mv_order_summary
     BUILD IMMEDIATE
     REFRESH COMPLETE ON DEMAND
@@ -248,17 +205,17 @@ AS
     LEFT JOIN orders o ON u.id = o.user_id
     GROUP BY u.username;
 
--- DROP MATERIALIZED VIEW örneği (yorum satırı olarak)
+-- DROP MATERIALIZED VIEW example (commented)
 -- DROP MATERIALIZED VIEW mv_order_summary;
 
--- CREATE SYNONYM örneği
+-- CREATE SYNONYM example
 CREATE PUBLIC SYNONYM orders_syn FOR orders;
 
--- DROP SYNONYM örneği (yorum satırı olarak)
+-- DROP SYNONYM example (commented)
 -- DROP PUBLIC SYNONYM orders_syn;
 
--- CREATE DIRECTORY örneği
+-- CREATE DIRECTORY example
 CREATE OR REPLACE DIRECTORY data_pump_dir AS 'path/to/directory';
 
--- DROP DIRECTORY örneği (yorum satırı olarak)
+-- DROP DIRECTORY example (commented)
 -- DROP DIRECTORY data_pump_dir;

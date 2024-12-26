@@ -1,7 +1,7 @@
--- SQLite sürüm ve ayarlar
+-- SQLite version and settings
 PRAGMA foreign_keys = ON;
 
--- Users tablosu
+-- Users table
 CREATE TABLE users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT NOT NULL,
@@ -12,20 +12,20 @@ CREATE TABLE users (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Products tablosu
+-- Products table
 CREATE TABLE products (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     description TEXT,
     price DECIMAL(10,2) NOT NULL CHECK (price >= 0),
     stock INTEGER NOT NULL DEFAULT 0 CHECK (stock >= 0),
-    metadata TEXT, -- JSON verisi için
+    metadata TEXT, -- JSON data
     is_active INTEGER DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Orders tablosu
+-- Orders table
 CREATE TABLE orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
@@ -35,11 +35,11 @@ CREATE TABLE orders (
     shipping_address TEXT NOT NULL,
     order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     delivery_date TIMESTAMP,
-    metadata TEXT, -- JSON verisi için
+    metadata TEXT, -- JSON data
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Order Items tablosu (çoka-çok ilişki)
+-- Order Items table (many-to-many relationship)
 CREATE TABLE order_items (
     order_id INTEGER NOT NULL,
     product_id INTEGER NOT NULL,
@@ -51,7 +51,7 @@ CREATE TABLE order_items (
     FOREIGN KEY (product_id) REFERENCES products(id)
 );
 
--- Order History tablosu
+-- Order History table
 CREATE TABLE order_history (
     id INTEGER NOT NULL,
     order_id INTEGER NOT NULL,
@@ -60,14 +60,14 @@ CREATE TABLE order_history (
     changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- İndeksler
+-- Indexes
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_products_name ON products(name);
 CREATE INDEX idx_orders_user_id ON orders(user_id);
 CREATE INDEX idx_orders_status ON orders(status);
 CREATE INDEX idx_order_items_product ON order_items(product_id);
 
--- View örneği
+-- View example
 CREATE VIEW order_summary AS
 SELECT 
     o.id as order_id,
@@ -81,72 +81,36 @@ JOIN users u ON o.user_id = u.id
 JOIN order_items oi ON o.id = oi.order_id
 GROUP BY o.id, u.username, o.total_amount, o.status, o.order_date;
 
--- Trigger örneği (updated_at alanını güncellemek için)
-CREATE TRIGGER users_update_trigger
-AFTER UPDATE ON users
-BEGIN
-    UPDATE users SET updated_at = CURRENT_TIMESTAMP
-    WHERE id = NEW.id;
-END;
+-- Table and column comments
+-- Note: SQLite does not support table and column comments directly
+-- We can use a separate table to store comments if needed
 
-CREATE TRIGGER products_update_trigger
-AFTER UPDATE ON products
-BEGIN
-    UPDATE products SET updated_at = CURRENT_TIMESTAMP
-    WHERE id = NEW.id;
-END;
+-- DDL Command Examples
+-- Note: SQLite does not support many DDL commands that other databases have
+-- For example, it does not support ALTER TABLE ADD COLUMN with constraints
+-- or DROP COLUMN
 
--- DDL Komut Örnekleri
--- SQLite'da veritabanı dosya tabanlıdır, CREATE DATABASE komutu yoktur
--- Veritabanı oluşturmak için sqlite3 komutu kullanılır:
--- $ sqlite3 ecommerce.db
-
--- ATTACH DATABASE örneği
-ATTACH DATABASE 'archive.db' AS archive;
-
--- DETACH DATABASE örneği
-DETACH DATABASE archive;
-
--- ALTER TABLE örnekleri
-ALTER TABLE users 
-    ADD COLUMN phone TEXT;
-
-ALTER TABLE users 
-    ADD COLUMN address TEXT;
-
-ALTER TABLE users
-    RENAME TO users_new;
-
-ALTER TABLE products 
-    RENAME COLUMN name TO product_name;
-
--- DROP TABLE örnekleri (yorum satırı olarak)
--- DROP TABLE IF EXISTS order_items;
--- DROP TABLE IF EXISTS orders;
--- DROP TABLE IF EXISTS products;
--- DROP TABLE IF EXISTS users;
-
--- CREATE INDEX örnekleri
+-- CREATE INDEX examples
 CREATE INDEX idx_users_username ON users(username);
 CREATE INDEX idx_products_price ON products(price);
 CREATE INDEX idx_orders_created ON orders(created_at);
 
--- DROP INDEX örnekleri (yorum satırı olarak)
+-- DROP INDEX examples (commented)
 -- DROP INDEX IF EXISTS idx_users_username;
 -- DROP INDEX IF EXISTS idx_products_price;
 -- DROP INDEX IF EXISTS idx_orders_created;
 
--- CREATE VIEW örneği
+-- CREATE VIEW example
 CREATE VIEW view_order_summary AS
     SELECT u.username, COUNT(o.id) as total_orders, SUM(o.total_amount) as total_spent
     FROM users u
     LEFT JOIN orders o ON u.id = o.user_id
     GROUP BY u.username;
 
--- DROP VIEW örneği (yorum satırı olarak)
+-- DROP VIEW example (commented)
 -- DROP VIEW IF EXISTS view_order_summary;
 
--- CREATE TRIGGER örneği
+-- CREATE TRIGGER example
 CREATE TRIGGER before_product_update
     BEFORE UPDATE ON products
     FOR EACH ROW
@@ -155,10 +119,10 @@ BEGIN
     SELECT RAISE(ROLLBACK, 'Price cannot be negative');
 END;
 
--- DROP TRIGGER örneği (yorum satırı olarak)
+-- DROP TRIGGER example (commented)
 -- DROP TRIGGER IF EXISTS before_product_update;
 
--- CREATE VIRTUAL TABLE örneği (FTS5)
+-- CREATE VIRTUAL TABLE example (FTS5)
 CREATE VIRTUAL TABLE products_fts USING fts5(
     name,
     description,
@@ -166,10 +130,10 @@ CREATE VIRTUAL TABLE products_fts USING fts5(
     content_rowid='id'
 );
 
--- DROP VIRTUAL TABLE örneği (yorum satırı olarak)
+-- DROP VIRTUAL TABLE example (commented)
 -- DROP TABLE IF EXISTS products_fts;
 
--- CREATE TEMP TABLE örneği
+-- CREATE TEMP TABLE example
 CREATE TEMP TABLE temp_orders (
     id INTEGER PRIMARY KEY,
     user_id INTEGER,
@@ -178,10 +142,10 @@ CREATE TEMP TABLE temp_orders (
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
--- DROP TEMP TABLE örneği (yorum satırı olarak)
+-- DROP TEMP TABLE example (commented)
 -- DROP TABLE IF EXISTS temp_orders;
 
--- PRAGMA örnekleri
+-- PRAGMA examples
 PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
@@ -190,11 +154,11 @@ PRAGMA temp_store = MEMORY;
 PRAGMA mmap_size = 30000000000;
 PRAGMA page_size = 4096;
 
--- VACUUM örneği
+-- VACUUM example
 VACUUM;
 
--- ANALYZE örneği
+-- ANALYZE example
 ANALYZE;
 
--- REINDEX örneği
+-- REINDEX example
 REINDEX;

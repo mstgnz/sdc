@@ -93,15 +93,15 @@ JOIN "public"."users" u ON o.user_id = u.id
 JOIN "public"."order_items" oi ON o.id = oi.order_id
 GROUP BY o.id, u.username, o.total_amount, o.status, o.order_date;
 
--- Kolonlara açıklama ekleme
-COMMENT ON TABLE "public"."users" IS 'Kullanıcı bilgilerinin tutulduğu tablo';
-COMMENT ON COLUMN "public"."users"."email" IS 'Kullanıcı email adresi';
-COMMENT ON TABLE "public"."products" IS 'Ürün bilgilerinin tutulduğu tablo';
-COMMENT ON TABLE "public"."orders" IS 'Sipariş bilgilerinin tutulduğu tablo';
-COMMENT ON TABLE "public"."order_items" IS 'Sipariş detaylarının tutulduğu tablo';
+-- Table and column comments
+COMMENT ON TABLE "public"."users" IS 'Table storing user information';
+COMMENT ON COLUMN "public"."users"."email" IS 'User email address';
+COMMENT ON TABLE "public"."products" IS 'Table storing product information';
+COMMENT ON TABLE "public"."orders" IS 'Table storing order information';
+COMMENT ON TABLE "public"."order_items" IS 'Table storing order item details';
 
--- DDL Komut Örnekleri
--- CREATE DATABASE örneği
+-- DDL Command Examples
+-- CREATE DATABASE example
 CREATE DATABASE ecommerce
     WITH 
     OWNER = postgres
@@ -111,32 +111,32 @@ CREATE DATABASE ecommerce
     TABLESPACE = pg_default
     CONNECTION LIMIT = -1;
 
--- DROP DATABASE örneği (yorum satırı olarak)
+-- DROP DATABASE example (commented)
 -- DROP DATABASE IF EXISTS ecommerce;
 
--- ALTER DATABASE örneği
+-- ALTER DATABASE example
 ALTER DATABASE ecommerce
     SET search_path = public, extensions;
 
--- CREATE SCHEMA örneği
+-- CREATE SCHEMA example
 CREATE SCHEMA IF NOT EXISTS app
     AUTHORIZATION postgres;
 
--- DROP SCHEMA örneği (yorum satırı olarak)
+-- DROP SCHEMA example (commented)
 -- DROP SCHEMA IF EXISTS app CASCADE;
 
--- ALTER SCHEMA örneği
+-- ALTER SCHEMA example
 ALTER SCHEMA app OWNER TO postgres;
 
--- CREATE EXTENSION örneği
+-- CREATE EXTENSION example
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- DROP EXTENSION örneği (yorum satırı olarak)
+-- DROP EXTENSION example (commented)
 -- DROP EXTENSION IF EXISTS "uuid-ossp";
 -- DROP EXTENSION IF EXISTS "pgcrypto";
 
--- CREATE USER örneği
+-- CREATE USER example
 CREATE USER app_user WITH 
     LOGIN
     NOSUPERUSER
@@ -147,32 +147,32 @@ CREATE USER app_user WITH
     CONNECTION LIMIT -1
     PASSWORD 'password';
 
--- ALTER USER örneği
+-- ALTER USER example
 ALTER USER app_user WITH PASSWORD 'new_password';
 
--- DROP USER örneği (yorum satırı olarak)
+-- DROP USER example (commented)
 -- DROP USER IF EXISTS app_user;
 
--- GRANT örnekleri
+-- GRANT examples
 GRANT CONNECT ON DATABASE ecommerce TO app_user;
 GRANT USAGE ON SCHEMA public TO app_user;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO app_user;
 GRANT INSERT, UPDATE ON products TO app_user;
 
--- REVOKE örnekleri
+-- REVOKE examples
 REVOKE INSERT, UPDATE ON products FROM app_user;
 
--- CREATE ROLE örneği
+-- CREATE ROLE example
 CREATE ROLE app_read_role;
 GRANT CONNECT ON DATABASE ecommerce TO app_read_role;
 GRANT USAGE ON SCHEMA public TO app_read_role;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO app_read_role;
 GRANT app_read_role TO app_user;
 
--- DROP ROLE örneği (yorum satırı olarak)
+-- DROP ROLE example (commented)
 -- DROP ROLE IF EXISTS app_read_role;
 
--- ALTER TABLE örnekleri
+-- ALTER TABLE examples
 ALTER TABLE users 
     ADD COLUMN phone VARCHAR(20),
     ADD COLUMN address TEXT;
@@ -181,62 +181,49 @@ ALTER TABLE users
     ADD CONSTRAINT users_phone_unique UNIQUE (phone);
 
 ALTER TABLE products 
+    ALTER COLUMN price TYPE DECIMAL(12,2),
     ALTER COLUMN price SET NOT NULL,
     ALTER COLUMN stock SET DEFAULT 100;
 
 ALTER TABLE products
     ADD CONSTRAINT products_name_unique UNIQUE (name);
 
--- DROP TABLE örnekleri (yorum satırı olarak)
+-- DROP TABLE examples (commented)
 -- DROP TABLE IF EXISTS order_items CASCADE;
 -- DROP TABLE IF EXISTS orders CASCADE;
 -- DROP TABLE IF EXISTS products CASCADE;
 -- DROP TABLE IF EXISTS users CASCADE;
 
--- TRUNCATE örneği (yorum satırı olarak)
+-- TRUNCATE example (commented)
 -- TRUNCATE TABLE order_items CASCADE;
 -- TRUNCATE TABLE orders CASCADE;
 -- TRUNCATE TABLE products CASCADE;
 -- TRUNCATE TABLE users CASCADE;
 
--- CREATE INDEX örnekleri
+-- CREATE INDEX examples
 CREATE INDEX idx_users_username ON users(username);
 CREATE INDEX idx_products_price ON products(price);
 CREATE INDEX idx_orders_created ON orders(created_at);
 
--- DROP INDEX örnekleri (yorum satırı olarak)
+-- DROP INDEX examples (commented)
 -- DROP INDEX IF EXISTS idx_users_username;
 -- DROP INDEX IF EXISTS idx_products_price;
 -- DROP INDEX IF EXISTS idx_orders_created;
 
--- ALTER INDEX örneği
+-- ALTER INDEX example
 ALTER INDEX idx_users_email RENAME TO idx_users_email_new;
 
--- CREATE VIEW örneği
+-- CREATE VIEW example
 CREATE OR REPLACE VIEW view_order_summary AS
     SELECT u.username, COUNT(o.id) as total_orders, SUM(o.total_amount) as total_spent
     FROM users u
     LEFT JOIN orders o ON u.id = o.user_id
     GROUP BY u.username;
 
--- DROP VIEW örneği (yorum satırı olarak)
+-- DROP VIEW example (commented)
 -- DROP VIEW IF EXISTS view_order_summary;
 
--- CREATE MATERIALIZED VIEW örneği
-CREATE MATERIALIZED VIEW mv_order_summary AS
-    SELECT u.username, COUNT(o.id) as total_orders, SUM(o.total_amount) as total_spent
-    FROM users u
-    LEFT JOIN orders o ON u.id = o.user_id
-    GROUP BY u.username
-WITH DATA;
-
--- DROP MATERIALIZED VIEW örneği (yorum satırı olarak)
--- DROP MATERIALIZED VIEW IF EXISTS mv_order_summary;
-
--- REFRESH MATERIALIZED VIEW örneği
-REFRESH MATERIALIZED VIEW mv_order_summary;
-
--- CREATE TRIGGER örneği
+-- CREATE TRIGGER example
 CREATE OR REPLACE FUNCTION update_product_price()
     RETURNS TRIGGER AS $$
 BEGIN
@@ -252,11 +239,11 @@ CREATE TRIGGER before_product_update
     FOR EACH ROW
     EXECUTE FUNCTION update_product_price();
 
--- DROP TRIGGER örneği (yorum satırı olarak)
+-- DROP TRIGGER example (commented)
 -- DROP TRIGGER IF EXISTS before_product_update ON products;
 -- DROP FUNCTION IF EXISTS update_product_price();
 
--- CREATE FUNCTION örneği
+-- CREATE FUNCTION example
 CREATE OR REPLACE FUNCTION get_user_orders(user_id INTEGER)
     RETURNS TABLE (
         order_id INTEGER,
@@ -271,23 +258,23 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- DROP FUNCTION örneği (yorum satırı olarak)
+-- DROP FUNCTION example (commented)
 -- DROP FUNCTION IF EXISTS get_user_orders(INTEGER);
 
--- CREATE TYPE örneği
+-- CREATE TYPE example
 CREATE TYPE order_status AS ENUM ('pending', 'processing', 'completed', 'cancelled');
 
--- DROP TYPE örneği (yorum satırı olarak)
+-- DROP TYPE example (commented)
 -- DROP TYPE IF EXISTS order_status;
 
--- CREATE DOMAIN örneği
+-- CREATE DOMAIN example
 CREATE DOMAIN positive_price AS DECIMAL(12,2)
     CHECK (VALUE >= 0);
 
--- DROP DOMAIN örneği (yorum satırı olarak)
+-- DROP DOMAIN example (commented)
 -- DROP DOMAIN IF EXISTS positive_price;
 
--- Sequence örnekleri
+-- Sequence examples
 CREATE SEQUENCE IF NOT EXISTS custom_seq
     INCREMENT 1
     START 1000
@@ -299,5 +286,5 @@ ALTER SEQUENCE custom_seq
     INCREMENT 5
     RESTART WITH 2000;
 
--- DROP SEQUENCE örneği (yorum satırı olarak)
+-- DROP SEQUENCE example (commented)
 -- DROP SEQUENCE IF EXISTS custom_seq;
