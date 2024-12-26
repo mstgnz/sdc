@@ -8,10 +8,22 @@ import (
 	"github.com/mstgnz/sdc"
 )
 
+// Precompiled regex patterns for better performance
+var (
+	createTableRegex      = regexp.MustCompile(`(?i)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:([^\s.]+)\.)?([^\s(]+)\s*\((.*)\)`)
+	inlineCommentRegex    = regexp.MustCompile(`--.*$`)
+	multiLineCommentRegex = regexp.MustCompile(`/\*.*?\*/`)
+	defaultValueRegex     = regexp.MustCompile(`(?i)DEFAULT\s+(.+)`)
+	foreignKeyRegex       = regexp.MustCompile(`(?i)REFERENCES\s+(?:([^\s.]+)\.)?([^\s(]+)\s*\(([^)]+)\)`)
+	sqliteColumnRegex     = regexp.MustCompile(`(?i)^\s*"?([^"\s(]+)"?\s+([^(,\s]+)(?:\s*\(([^)]+)\))?\s*(.*)$`)
+	sqliteDefaultRegex    = regexp.MustCompile(`(?i)DEFAULT\s+([^,\s]+|'[^']*'|"[^"]*")`)
+)
+
 // SQLiteParser implements the parser for SQLite database
 type SQLiteParser struct {
-	dbInfo       DatabaseInfo
-	currentTable *sdc.Table // Geçerli işlenen tablo
+	dbInfo DatabaseInfo
+	// Add buffer pool for string builders to reduce allocations
+	builderPool strings.Builder
 }
 
 // NewSQLiteParser creates a new SQLite parser
@@ -23,195 +35,274 @@ func NewSQLiteParser() *SQLiteParser {
 
 // Parse converts SQLite dump to Entity structure
 func (p *SQLiteParser) Parse(sql string) (*sdc.Entity, error) {
-	entity := &sdc.Entity{}
+	entity := &sdc.Entity{
+		Tables: make([]*sdc.Table, 0), // Pre-allocate slice
+	}
 
-	// Find CREATE TABLE statements
-	createTableRegex := regexp.MustCompile(`(?i)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s(]+)\s*\((.*?)\)`)
-	matches := createTableRegex.FindStringSubmatch(sql)
+	// Remove comments and normalize whitespace once
+	sql = removeComments(sql)
+	sql = strings.TrimSpace(sql)
 
-	if len(matches) > 0 {
-		table, err := p.parseCreateTable(sql)
-		if err != nil {
-			return nil, err
+	// Split SQL statements efficiently
+	statements := strings.Split(sql, ";")
+	for _, stmt := range statements {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" {
+			continue
 		}
-		entity.Tables = append(entity.Tables, table)
+
+		// Process CREATE TABLE statements
+		if strings.HasPrefix(strings.ToUpper(stmt), "CREATE TABLE") {
+			table, err := p.parseCreateTable(stmt)
+			if err != nil {
+				return nil, err
+			}
+			entity.Tables = append(entity.Tables, table)
+		}
 	}
 
 	return entity, nil
 }
 
-// parseCreateTable parses CREATE TABLE statement
+// parseCreateTable parses CREATE TABLE statement with optimized string handling
 func (p *SQLiteParser) parseCreateTable(sql string) (*sdc.Table, error) {
-	// Remove comments and extra whitespace
-	sql = removeComments(sql)
-	sql = strings.TrimSpace(sql)
-
-	// Basic validation
-	if !strings.HasPrefix(strings.ToUpper(sql), "CREATE TABLE") {
+	matches := createTableRegex.FindStringSubmatch(sql)
+	if len(matches) < 4 {
 		return nil, fmt.Errorf("invalid CREATE TABLE statement")
 	}
 
-	// Extract table name
-	tableNameRegex := regexp.MustCompile(`CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s(]+)\s*\(`)
-	matches := tableNameRegex.FindStringSubmatch(sql)
-	if len(matches) < 2 {
-		return nil, fmt.Errorf("could not extract table name")
-	}
-
 	table := &sdc.Table{
-		Name: matches[1],
+		Schema:      strings.Trim(matches[1], "[]\""),
+		Name:        strings.Trim(matches[2], "[]\""),
+		Columns:     make([]*sdc.Column, 0),     // Pre-allocate slices
+		Constraints: make([]*sdc.Constraint, 0), // Pre-allocate slices
 	}
 
-	// Extract column definitions
-	columnDefsRegex := regexp.MustCompile(`\((.*)\)`)
-	matches = columnDefsRegex.FindStringSubmatch(sql)
-	if len(matches) < 2 {
-		return nil, fmt.Errorf("could not extract column definitions")
-	}
-
-	// Parse column definitions
-	columnDefs := strings.Split(matches[1], ",")
-	var comments []string
-
-	for _, columnDef := range columnDefs {
-		columnDef = strings.TrimSpace(columnDef)
-		if columnDef == "" {
+	// Parse column definitions efficiently
+	defs := splitWithParentheses(matches[3])
+	for _, def := range defs {
+		def = strings.TrimSpace(def)
+		if def == "" {
 			continue
 		}
 
-		// Check for constraints
-		if strings.HasPrefix(strings.ToUpper(columnDef), "CONSTRAINT") ||
-			strings.HasPrefix(strings.ToUpper(columnDef), "PRIMARY KEY") ||
-			strings.HasPrefix(strings.ToUpper(columnDef), "FOREIGN KEY") ||
-			strings.HasPrefix(strings.ToUpper(columnDef), "UNIQUE") {
-			comments = append(comments, columnDef)
-			continue
-		}
-
-		// Check for CHECK constraints
-		if strings.HasPrefix(strings.ToUpper(columnDef), "CHECK") {
-			checkRegex := regexp.MustCompile(`(?i)CHECK\s*\((.*?)\)`)
-			checkMatches := checkRegex.FindStringSubmatch(columnDef)
-			if len(checkMatches) > 1 {
-				comments = append(comments, fmt.Sprintf("CHECK (%s)", checkMatches[1]))
+		// Parse constraints
+		upperDef := strings.ToUpper(def)
+		if strings.HasPrefix(upperDef, "CONSTRAINT") ||
+			strings.HasPrefix(upperDef, "PRIMARY KEY") ||
+			strings.HasPrefix(upperDef, "FOREIGN KEY") ||
+			strings.HasPrefix(upperDef, "UNIQUE") {
+			constraint := p.parseConstraint(def)
+			if constraint != nil {
+				table.Constraints = append(table.Constraints, constraint)
 			}
 			continue
 		}
 
 		// Parse column definition
-		column := p.parseColumn(columnDef)
+		column := p.parseColumn(def)
 		if column != nil {
 			table.Columns = append(table.Columns, column)
 		}
 	}
 
-	if len(comments) > 0 {
-		table.Comment = strings.Join(comments, ", ")
-	}
-
 	return table, nil
 }
 
-// parseColumn parses column definition
-func (p *SQLiteParser) parseColumn(columnDef string) *sdc.Column {
-	column := &sdc.Column{}
+// splitWithParentheses splits a string by commas while respecting parentheses
+func splitWithParentheses(s string) []string {
+	result := make([]string, 0, 8) // Pre-allocate slice with reasonable capacity
+	var current strings.Builder
+	parentheses := 0
+	inQuote := false
+	quoteChar := rune(0)
 
-	// Split column name and data type
-	parts := strings.Fields(columnDef)
-	if len(parts) < 2 {
+	for _, char := range s {
+		switch char {
+		case '(':
+			if !inQuote {
+				parentheses++
+			}
+			current.WriteRune(char)
+		case ')':
+			if !inQuote {
+				parentheses--
+			}
+			current.WriteRune(char)
+		case '"', '\'', '`':
+			if inQuote && char == quoteChar {
+				inQuote = false
+				quoteChar = 0
+			} else if !inQuote {
+				inQuote = true
+				quoteChar = char
+			}
+			current.WriteRune(char)
+		case ',':
+			if parentheses == 0 && !inQuote {
+				result = append(result, strings.TrimSpace(current.String()))
+				current.Reset()
+			} else {
+				current.WriteRune(char)
+			}
+		default:
+			current.WriteRune(char)
+		}
+	}
+
+	if current.Len() > 0 {
+		result = append(result, strings.TrimSpace(current.String()))
+	}
+
+	return result
+}
+
+// parseColumn parses column definition with optimized string handling
+func (p *SQLiteParser) parseColumn(columnDef string) *sdc.Column {
+	matches := sqliteColumnRegex.FindStringSubmatch(columnDef)
+	if len(matches) < 3 {
 		return nil
 	}
 
-	column.Name = parts[0]
+	column := &sdc.Column{
+		Name:       strings.Trim(matches[1], "\""),
+		IsNullable: true, // Default to nullable
+		Nullable:   true,
+	}
 
-	// Parse data type and length/scale information
-	dataTypeRegex := regexp.MustCompile(`(?i)(\w+(?:\s+\w+)?)\s*(?:\(([^)]+)\))?`)
-	dataTypeMatches := dataTypeRegex.FindStringSubmatch(parts[1])
+	// Parse data type
+	dataType := &sdc.DataType{
+		Name: matches[2],
+	}
 
-	if len(dataTypeMatches) > 1 {
-		dataType := &sdc.DataType{
-			Name: strings.ToUpper(dataTypeMatches[1]),
+	// Parse length/precision/scale
+	if matches[3] != "" {
+		parts := strings.Split(matches[3], ",")
+		if len(parts) > 0 {
+			if dataType.Name == "decimal" || dataType.Name == "numeric" {
+				dataType.Precision, _ = parseNumber(parts[0])
+				if len(parts) > 1 {
+					dataType.Scale, _ = parseNumber(parts[1])
+				}
+			} else {
+				dataType.Length, _ = parseNumber(parts[0])
+			}
+		}
+	}
+
+	column.DataType = dataType
+
+	// Parse additional properties
+	rest := matches[4]
+	if rest != "" {
+		// Check for DEFAULT
+		if defaultMatches := sqliteDefaultRegex.FindStringSubmatch(rest); defaultMatches != nil {
+			column.Default = defaultMatches[1]
 		}
 
-		// Parse length and scale information
-		if len(dataTypeMatches) > 2 && dataTypeMatches[2] != "" {
-			precisionScale := strings.Split(dataTypeMatches[2], ",")
-			if len(precisionScale) > 0 {
-				if strings.Contains(dataType.Name, "DECIMAL") || strings.Contains(dataType.Name, "NUMERIC") {
-					dataType.Precision = parseInt(precisionScale[0])
-					if len(precisionScale) > 1 {
-						dataType.Scale = parseInt(precisionScale[1])
-					}
-				} else {
-					dataType.Length = parseInt(precisionScale[0])
-				}
+		// Check for NOT NULL
+		if strings.Contains(strings.ToUpper(rest), "NOT NULL") {
+			column.IsNullable = false
+			column.Nullable = false
+		}
+
+		// Check for PRIMARY KEY
+		if strings.Contains(strings.ToUpper(rest), "PRIMARY KEY") {
+			column.PrimaryKey = true
+			column.IsNullable = false
+			column.Nullable = false
+			if strings.Contains(strings.ToUpper(rest), "AUTOINCREMENT") {
+				column.AutoIncrement = true
 			}
 		}
 
-		column.DataType = dataType
-	}
-
-	// Check for NOT NULL constraint
-	if strings.Contains(strings.ToUpper(columnDef), "NOT NULL") {
-		column.IsNullable = false
-	} else {
-		column.IsNullable = true
-	}
-
-	// Check for DEFAULT value
-	defaultRegex := regexp.MustCompile(`(?i)DEFAULT\s+([^,\s]+)`)
-	defaultMatches := defaultRegex.FindStringSubmatch(columnDef)
-	if len(defaultMatches) > 1 {
-		column.Default = defaultMatches[1]
-	}
-
-	// Check for PRIMARY KEY
-	if strings.Contains(strings.ToUpper(columnDef), "PRIMARY KEY") {
-		column.PrimaryKey = true
-		if strings.Contains(strings.ToUpper(columnDef), "AUTOINCREMENT") {
-			column.AutoIncrement = true
+		// Check for UNIQUE
+		if strings.Contains(strings.ToUpper(rest), "UNIQUE") {
+			column.Unique = true
 		}
-	}
-
-	// Check for UNIQUE
-	if strings.Contains(strings.ToUpper(columnDef), "UNIQUE") {
-		column.Unique = true
 	}
 
 	return column
 }
 
-// removeComments removes SQL comments from the input string
+// splitQuotedString splits a string by spaces while respecting quotes
+func splitQuotedString(s string) []string {
+	var result []string
+	var current strings.Builder
+	inQuote := false
+	quoteChar := rune(0)
+	lastWasSpace := true
+
+	for _, char := range s {
+		switch {
+		case char == '"' || char == '\'' || char == '`':
+			if inQuote && char == quoteChar {
+				inQuote = false
+				quoteChar = 0
+			} else if !inQuote {
+				inQuote = true
+				quoteChar = char
+			}
+			current.WriteRune(char)
+			lastWasSpace = false
+		case char == ' ' || char == '\t':
+			if inQuote {
+				current.WriteRune(char)
+			} else if !lastWasSpace {
+				if current.Len() > 0 {
+					result = append(result, current.String())
+					current.Reset()
+				}
+				lastWasSpace = true
+			}
+		default:
+			current.WriteRune(char)
+			lastWasSpace = false
+		}
+	}
+
+	if current.Len() > 0 {
+		result = append(result, current.String())
+	}
+
+	return result
+}
+
+// removeComments removes SQL comments efficiently
 func removeComments(sql string) string {
-	// Remove inline comments (--...)
-	inlineCommentRegex := regexp.MustCompile(`--.*$`)
+	// Remove inline comments
 	sql = inlineCommentRegex.ReplaceAllString(sql, "")
-
-	// Remove multi-line comments (/* ... */)
-	multiLineCommentRegex := regexp.MustCompile(`/\*.*?\*/`)
+	// Remove multi-line comments
 	sql = multiLineCommentRegex.ReplaceAllString(sql, "")
-
 	return sql
 }
 
-// Convert transforms Entity structure to SQLite format
+// Convert transforms Entity structure to SQLite format with optimized string handling
 func (p *SQLiteParser) Convert(entity *sdc.Entity) (string, error) {
-	var result strings.Builder
+	// Reset and reuse string builder
+	p.builderPool.Reset()
+	result := &p.builderPool
 
 	for _, table := range entity.Tables {
 		// CREATE TABLE statement
-		result.WriteString(fmt.Sprintf("CREATE TABLE %s (\n", table.Name))
+		result.WriteString("CREATE TABLE ")
+		result.WriteString(table.Name)
+		result.WriteString(" (\n")
 
 		// Columns
 		for i, column := range table.Columns {
-			result.WriteString(fmt.Sprintf("    %s %s", column.Name, p.convertDataType(column.DataType)))
+			result.WriteString("    ")
+			result.WriteString(column.Name)
+			result.WriteString(" ")
+			result.WriteString(p.convertDataType(column.DataType))
 
 			if !column.IsNullable {
 				result.WriteString(" NOT NULL")
 			}
 
 			if column.Default != "" {
-				result.WriteString(fmt.Sprintf(" DEFAULT %s", column.Default))
+				result.WriteString(" DEFAULT ")
+				result.WriteString(column.Default)
 			}
 
 			if column.PrimaryKey {
@@ -239,12 +330,6 @@ func (p *SQLiteParser) Convert(entity *sdc.Entity) (string, error) {
 // convertDataType converts data type to SQLite format
 func (p *SQLiteParser) convertDataType(dataType *sdc.DataType) string {
 	if dataType == nil {
-		return "TEXT"
-	}
-
-	// Sütun sayısı kontrolü
-	if p.dbInfo.MaxColumns > 0 && p.currentTable != nil && len(p.currentTable.Columns) >= p.dbInfo.MaxColumns {
-		// Hata durumunda varsayılan tip dönüyoruz
 		return "TEXT"
 	}
 
@@ -317,58 +402,43 @@ func (p *SQLiteParser) ParseCreateTable(sql string) (*sdc.Table, error) {
 
 	// Basic validation
 	if !strings.HasPrefix(strings.ToUpper(sql), "CREATE TABLE") {
-		return nil, fmt.Errorf("invalid CREATE TABLE statement")
+		return nil, fmt.Errorf("could not parse CREATE TABLE statement")
 	}
 
-	// Extract table name
-	tableNameRegex := regexp.MustCompile(`CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s(]+)\s*\(`)
-	matches := tableNameRegex.FindStringSubmatch(sql)
-	if len(matches) < 2 {
-		return nil, fmt.Errorf("could not extract table name")
+	// Extract table name and check for IF NOT EXISTS
+	tableRegex := regexp.MustCompile(`(?i)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:\[?([^\s\]]+)\]?)\s*\((.*)\)`)
+	matches := tableRegex.FindStringSubmatch(sql)
+	if len(matches) < 3 {
+		return nil, fmt.Errorf("could not parse CREATE TABLE statement")
 	}
 
 	table := &sdc.Table{
-		Name: matches[1],
+		Name: strings.Trim(matches[1], "[]"),
 	}
 
-	// Extract column definitions
-	columnDefsRegex := regexp.MustCompile(`\((.*)\)`)
-	matches = columnDefsRegex.FindStringSubmatch(sql)
-	if len(matches) < 2 {
-		return nil, fmt.Errorf("could not extract column definitions")
-	}
-
-	// Parse column definitions
-	columnDefs := strings.Split(matches[1], ",")
-	for _, columnDef := range columnDefs {
-		columnDef = strings.TrimSpace(columnDef)
-		if columnDef == "" {
+	// Split column definitions and constraints
+	columnDefs := strings.Split(matches[2], ",")
+	for _, def := range columnDefs {
+		def = strings.TrimSpace(def)
+		if def == "" {
 			continue
 		}
 
-		// Check for constraints
-		if strings.HasPrefix(strings.ToUpper(columnDef), "CONSTRAINT") {
-			constraint := p.parseConstraint(columnDef)
+		// Parse constraints
+		if strings.HasPrefix(strings.ToUpper(def), "CONSTRAINT") ||
+			strings.HasPrefix(strings.ToUpper(def), "PRIMARY KEY") ||
+			strings.HasPrefix(strings.ToUpper(def), "FOREIGN KEY") ||
+			strings.HasPrefix(strings.ToUpper(def), "UNIQUE") ||
+			strings.HasPrefix(strings.ToUpper(def), "CHECK") {
+			constraint := p.parseConstraint(def)
 			if constraint != nil {
 				table.Constraints = append(table.Constraints, constraint)
 			}
 			continue
 		}
 
-		// Check for table-level constraints
-		if strings.HasPrefix(strings.ToUpper(columnDef), "PRIMARY KEY") ||
-			strings.HasPrefix(strings.ToUpper(columnDef), "FOREIGN KEY") ||
-			strings.HasPrefix(strings.ToUpper(columnDef), "UNIQUE") ||
-			strings.HasPrefix(strings.ToUpper(columnDef), "CHECK") {
-			constraint := p.parseConstraint(columnDef)
-			if constraint != nil {
-				table.Constraints = append(table.Constraints, constraint)
-			}
-			continue
-		}
-
-		// Parse column definition
-		column := p.parseColumn(columnDef)
+		// Parse column
+		column := p.parseColumn(def)
 		if column != nil {
 			table.Columns = append(table.Columns, column)
 		}
@@ -378,7 +448,7 @@ func (p *SQLiteParser) ParseCreateTable(sql string) (*sdc.Table, error) {
 }
 
 // ParseAlterTable parses ALTER TABLE statement
-func (p *SQLiteParser) ParseAlterTable(sql string) (*sdc.AlterTable, error) {
+func (p *SQLiteParser) ParseAlterTable(sql string) (*sdc.Table, error) {
 	// Remove comments and extra whitespace
 	sql = removeComments(sql)
 	sql = strings.TrimSpace(sql)
@@ -388,35 +458,47 @@ func (p *SQLiteParser) ParseAlterTable(sql string) (*sdc.AlterTable, error) {
 		return nil, fmt.Errorf("invalid ALTER TABLE statement")
 	}
 
-	alterTable := &sdc.AlterTable{}
-
-	// Extract table name and action
-	alterRegex := regexp.MustCompile(`ALTER\s+TABLE\s+([^\s]+)\s+(.*)`)
-	matches := alterRegex.FindStringSubmatch(sql)
-	if len(matches) < 3 {
+	// Extract schema and table name
+	tableRegex := regexp.MustCompile(`(?i)ALTER\s+TABLE\s+(?:([^.]+)\.)?([^\s]+)\s+(.*)`)
+	matches := tableRegex.FindStringSubmatch(sql)
+	if len(matches) < 4 {
 		return nil, fmt.Errorf("could not parse ALTER TABLE statement")
 	}
 
-	alterTable.Table = matches[1]
-	action := strings.TrimSpace(matches[2])
-
-	// Parse action
-	if strings.HasPrefix(strings.ToUpper(action), "ADD COLUMN") {
-		alterTable.Action = "ADD COLUMN"
-		alterTable.Column = p.parseColumn(action[10:])
-	} else if strings.HasPrefix(strings.ToUpper(action), "DROP COLUMN") {
-		alterTable.Action = "DROP COLUMN"
-		alterTable.Column = &sdc.Column{Name: strings.TrimSpace(action[11:])}
-	} else if strings.HasPrefix(strings.ToUpper(action), "RENAME TO") {
-		alterTable.Action = "RENAME TO"
-		alterTable.NewName = strings.TrimSpace(action[9:])
+	table := &sdc.Table{
+		Schema: matches[1],
+		Name:   matches[2],
 	}
 
-	return alterTable, nil
+	action := strings.TrimSpace(matches[3])
+
+	// Parse ADD COLUMN
+	if strings.HasPrefix(strings.ToUpper(action), "ADD") {
+		columnDef := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(action, "ADD"), "COLUMN"))
+		column := p.parseColumn(columnDef)
+		if column != nil {
+			table.Columns = append(table.Columns, column)
+		}
+		return table, nil
+	}
+
+	// Parse DROP COLUMN
+	if strings.HasPrefix(strings.ToUpper(action), "DROP") {
+		return table, nil
+	}
+
+	// Parse RENAME TO
+	if strings.HasPrefix(strings.ToUpper(action), "RENAME TO") {
+		newName := strings.TrimSpace(strings.TrimPrefix(action, "RENAME TO"))
+		table.Name = strings.TrimSuffix(newName, ";")
+		return table, nil
+	}
+
+	return nil, fmt.Errorf("unsupported ALTER TABLE action")
 }
 
 // ParseDropTable parses DROP TABLE statement
-func (p *SQLiteParser) ParseDropTable(sql string) (*sdc.DropTable, error) {
+func (p *SQLiteParser) ParseDropTable(sql string) (*sdc.Table, error) {
 	// Remove comments and extra whitespace
 	sql = removeComments(sql)
 	sql = strings.TrimSpace(sql)
@@ -426,19 +508,19 @@ func (p *SQLiteParser) ParseDropTable(sql string) (*sdc.DropTable, error) {
 		return nil, fmt.Errorf("invalid DROP TABLE statement")
 	}
 
-	dropTable := &sdc.DropTable{}
-
-	// Extract table name
-	dropRegex := regexp.MustCompile(`DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?([^\s;]+)`)
-	matches := dropRegex.FindStringSubmatch(sql)
-	if len(matches) < 2 {
+	// Extract schema and table name
+	tableRegex := regexp.MustCompile(`(?i)DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:([^.]+)\.)?([^\s;]+)`)
+	matches := tableRegex.FindStringSubmatch(sql)
+	if len(matches) < 3 {
 		return nil, fmt.Errorf("could not parse DROP TABLE statement")
 	}
 
-	dropTable.Table = matches[1]
-	dropTable.IfExists = strings.Contains(strings.ToUpper(sql), "IF EXISTS")
+	table := &sdc.Table{
+		Schema: matches[1],
+		Name:   matches[2],
+	}
 
-	return dropTable, nil
+	return table, nil
 }
 
 // ParseCreateIndex parses CREATE INDEX statement
@@ -557,65 +639,93 @@ func (p *SQLiteParser) ParseSQL(sql string) (*sdc.Entity, error) {
 func (p *SQLiteParser) parseConstraint(constraintDef string) *sdc.Constraint {
 	constraint := &sdc.Constraint{}
 
-	// Extract constraint name if exists
-	if strings.HasPrefix(strings.ToUpper(constraintDef), "CONSTRAINT") {
-		nameRegex := regexp.MustCompile(`CONSTRAINT\s+(\w+)\s+(.*)`)
-		matches := nameRegex.FindStringSubmatch(constraintDef)
-		if len(matches) < 3 {
-			return nil
-		}
-		constraint.Name = matches[1]
-		constraintDef = matches[2]
+	// Split constraint definition into parts
+	parts := strings.Fields(constraintDef)
+	if len(parts) < 2 {
+		return nil
 	}
 
-	// Determine constraint type and parse accordingly
-	if strings.HasPrefix(strings.ToUpper(constraintDef), "PRIMARY KEY") {
-		constraint.Type = "PRIMARY KEY"
-		columnsRegex := regexp.MustCompile(`\((.*?)\)`)
-		columnsMatch := columnsRegex.FindStringSubmatch(constraintDef)
-		if len(columnsMatch) > 1 {
-			columns := strings.Split(columnsMatch[1], ",")
-			for _, col := range columns {
-				constraint.Columns = append(constraint.Columns, strings.TrimSpace(col))
+	// Check if it starts with CONSTRAINT keyword
+	startIdx := 0
+	if strings.ToUpper(parts[0]) == "CONSTRAINT" {
+		if len(parts) < 3 {
+			return nil
+		}
+		constraint.Name = strings.Trim(parts[1], "[]\"")
+		startIdx = 2
+	}
+
+	// Parse constraint type and details
+	constraintType := strings.ToUpper(parts[startIdx])
+	switch constraintType {
+	case "PRIMARY":
+		if startIdx+1 < len(parts) && strings.ToUpper(parts[startIdx+1]) == "KEY" {
+			constraint.Type = "PRIMARY KEY"
+			// Parse columns
+			if startIdx+2 < len(parts) && strings.HasPrefix(parts[startIdx+2], "(") {
+				colStr := strings.Trim(parts[startIdx+2], "()")
+				cols := strings.Split(colStr, ",")
+				for _, col := range cols {
+					constraint.Columns = append(constraint.Columns, strings.Trim(col, "[]\""))
+				}
 			}
 		}
-	} else if strings.HasPrefix(strings.ToUpper(constraintDef), "FOREIGN KEY") {
-		constraint.Type = "FOREIGN KEY"
-		fkRegex := regexp.MustCompile(`FOREIGN\s+KEY\s*\((.*?)\)\s*REFERENCES\s+(\w+)\s*\((.*?)\)(?:\s+ON\s+DELETE\s+(\w+(?:\s+\w+)?))?(?:\s+ON\s+UPDATE\s+(\w+(?:\s+\w+)?))?`)
-		fkMatch := fkRegex.FindStringSubmatch(constraintDef)
-		if len(fkMatch) > 3 {
-			columns := strings.Split(fkMatch[1], ",")
-			for _, col := range columns {
-				constraint.Columns = append(constraint.Columns, strings.TrimSpace(col))
+	case "FOREIGN":
+		if startIdx+1 < len(parts) && strings.ToUpper(parts[startIdx+1]) == "KEY" {
+			constraint.Type = "FOREIGN KEY"
+			// Parse columns
+			nextIdx := startIdx + 2
+			if nextIdx < len(parts) && strings.HasPrefix(parts[nextIdx], "(") {
+				colStr := strings.Trim(parts[nextIdx], "()")
+				cols := strings.Split(colStr, ",")
+				for _, col := range cols {
+					constraint.Columns = append(constraint.Columns, strings.Trim(col, "[]\""))
+				}
+				nextIdx++
 			}
-			constraint.RefTable = fkMatch[2]
-			refColumns := strings.Split(fkMatch[3], ",")
-			for _, col := range refColumns {
-				constraint.RefColumns = append(constraint.RefColumns, strings.TrimSpace(col))
-			}
-			if len(fkMatch) > 4 && fkMatch[4] != "" {
-				constraint.OnDelete = fkMatch[4]
-			}
-			if len(fkMatch) > 5 && fkMatch[5] != "" {
-				constraint.OnUpdate = fkMatch[5]
+			// Parse REFERENCES
+			for i := nextIdx; i < len(parts); i++ {
+				if strings.ToUpper(parts[i]) == "REFERENCES" {
+					if i+1 < len(parts) {
+						constraint.RefTable = strings.Trim(parts[i+1], "[]\"")
+						i++
+						if i+1 < len(parts) && strings.HasPrefix(parts[i+1], "(") {
+							refColStr := strings.Trim(parts[i+1], "()")
+							refCols := strings.Split(refColStr, ",")
+							for _, col := range refCols {
+								constraint.RefColumns = append(constraint.RefColumns, strings.Trim(col, "[]\""))
+							}
+							i++
+						}
+					}
+					// Parse ON DELETE/UPDATE actions
+					for j := i + 1; j < len(parts); j++ {
+						if strings.ToUpper(parts[j]) == "ON" && j+2 < len(parts) {
+							action := strings.ToUpper(parts[j+1])
+							if action == "DELETE" {
+								constraint.OnDelete = strings.ToUpper(parts[j+2])
+								j += 2
+								i = j
+							} else if action == "UPDATE" {
+								constraint.OnUpdate = strings.ToUpper(parts[j+2])
+								j += 2
+								i = j
+							}
+						}
+					}
+					break
+				}
 			}
 		}
-	} else if strings.HasPrefix(strings.ToUpper(constraintDef), "UNIQUE") {
+	case "UNIQUE":
 		constraint.Type = "UNIQUE"
-		columnsRegex := regexp.MustCompile(`\((.*?)\)`)
-		columnsMatch := columnsRegex.FindStringSubmatch(constraintDef)
-		if len(columnsMatch) > 1 {
-			columns := strings.Split(columnsMatch[1], ",")
-			for _, col := range columns {
-				constraint.Columns = append(constraint.Columns, strings.TrimSpace(col))
+		// Parse columns
+		if startIdx+1 < len(parts) && strings.HasPrefix(parts[startIdx+1], "(") {
+			colStr := strings.Trim(parts[startIdx+1], "()")
+			cols := strings.Split(colStr, ",")
+			for _, col := range cols {
+				constraint.Columns = append(constraint.Columns, strings.Trim(col, "[]\""))
 			}
-		}
-	} else if strings.HasPrefix(strings.ToUpper(constraintDef), "CHECK") {
-		constraint.Type = "CHECK"
-		checkRegex := regexp.MustCompile(`CHECK\s*\((.*?)\)`)
-		checkMatch := checkRegex.FindStringSubmatch(constraintDef)
-		if len(checkMatch) > 1 {
-			constraint.Check = checkMatch[1]
 		}
 	}
 
