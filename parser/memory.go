@@ -10,32 +10,31 @@ import (
 
 // MemoryOptimizer handles memory optimization
 type MemoryOptimizer struct {
-	maxMemory      int64
+	maxMemory      uint64
 	gcThreshold    float64
 	monitorTicker  time.Duration
-	bufferPool     *sync.Pool
+	bufferPool     sync.Pool
 	statsCollector *sync.Map
 	isRunning      bool
 	mu             sync.RWMutex
+	stats          *MemoryStats
 }
 
 // MemoryStats holds memory statistics
 type MemoryStats struct {
-	AllocatedBytes    uint64
-	TotalAllocBytes   uint64
-	SystemBytes       uint64
-	GCCycles          uint32
-	LastGCPauseNanos  uint64
-	TotalGCPauseNanos uint64
+	Alloc      uint64
+	TotalAlloc uint64
+	Sys        uint64
+	NumGC      uint32
 }
 
 // NewMemoryOptimizer creates a new memory optimizer
 func NewMemoryOptimizer(maxMemoryMB int64, gcThreshold float64) *MemoryOptimizer {
 	return &MemoryOptimizer{
-		maxMemory:     maxMemoryMB * 1024 * 1024,
+		maxMemory:     uint64(maxMemoryMB * 1024 * 1024),
 		gcThreshold:   gcThreshold,
 		monitorTicker: time.Second,
-		bufferPool: &sync.Pool{
+		bufferPool: sync.Pool{
 			New: func() interface{} {
 				b := make([]byte, 32*1024) // 32KB default buffer size
 				return &b
@@ -47,48 +46,30 @@ func NewMemoryOptimizer(maxMemoryMB int64, gcThreshold float64) *MemoryOptimizer
 
 // MonitorMemory monitors and optimizes memory usage
 func (mo *MemoryOptimizer) MonitorMemory(ctx context.Context) {
-	mo.mu.Lock()
-	if mo.isRunning {
-		mo.mu.Unlock()
-		return
-	}
-	mo.isRunning = true
-	mo.mu.Unlock()
-
 	ticker := time.NewTicker(mo.monitorTicker)
 	defer ticker.Stop()
 
-	var ms runtime.MemStats
 	for {
 		select {
 		case <-ctx.Done():
-			mo.mu.Lock()
-			mo.isRunning = false
-			mo.mu.Unlock()
 			return
 		case <-ticker.C:
-			runtime.ReadMemStats(&ms)
+			stats := &runtime.MemStats{}
+			runtime.ReadMemStats(stats)
 
-			// Collect stats
-			stats := &MemoryStats{
-				AllocatedBytes:   ms.Alloc,
-				TotalAllocBytes:  ms.TotalAlloc,
-				SystemBytes:      ms.Sys,
-				GCCycles:         ms.NumGC,
-				LastGCPauseNanos: ms.PauseNs[(ms.NumGC+255)%256],
+			mo.mu.Lock()
+			mo.stats = &MemoryStats{
+				Alloc:      stats.Alloc,
+				TotalAlloc: stats.TotalAlloc,
+				Sys:        stats.Sys,
+				NumGC:      stats.NumGC,
 			}
-			for i := range ms.PauseNs {
-				stats.TotalGCPauseNanos += ms.PauseNs[i]
-			}
-			mo.statsCollector.Store(time.Now().UnixNano(), stats)
+			mo.mu.Unlock()
 
-			// Check if we need to trigger GC
-			if float64(ms.Alloc) > float64(mo.maxMemory)*mo.gcThreshold {
-				runtime.GC()
-				debug.FreeOSMemory() // Return memory to OS
+			if mo.stats.Alloc > mo.maxMemory {
+				mo.ReleaseMemory()
 			}
 
-			// Clean up old stats
 			mo.cleanupOldStats()
 		}
 	}
@@ -110,19 +91,21 @@ func (mo *MemoryOptimizer) PutBuffer(buf []byte) {
 
 // GetStats returns current memory statistics
 func (mo *MemoryOptimizer) GetStats() *MemoryStats {
-	var latest *MemoryStats
-	var latestTime int64
+	mo.mu.Lock()
+	defer mo.mu.Unlock()
 
-	mo.statsCollector.Range(func(key, value interface{}) bool {
-		timestamp := key.(int64)
-		if timestamp > latestTime {
-			latestTime = timestamp
-			latest = value.(*MemoryStats)
+	if mo.stats == nil {
+		stats := &runtime.MemStats{}
+		runtime.ReadMemStats(stats)
+		mo.stats = &MemoryStats{
+			Alloc:      stats.Alloc,
+			TotalAlloc: stats.TotalAlloc,
+			Sys:        stats.Sys,
+			NumGC:      stats.NumGC,
 		}
-		return true
-	})
+	}
 
-	return latest
+	return mo.stats
 }
 
 // cleanupOldStats removes stats older than 1 hour
@@ -147,7 +130,7 @@ func (mo *MemoryOptimizer) SetMonitoringInterval(d time.Duration) {
 // SetMaxMemory sets the maximum memory threshold
 func (mo *MemoryOptimizer) SetMaxMemory(maxMemoryMB int64) {
 	mo.mu.Lock()
-	mo.maxMemory = maxMemoryMB * 1024 * 1024
+	mo.maxMemory = uint64(maxMemoryMB * 1024 * 1024)
 	mo.mu.Unlock()
 }
 
@@ -156,4 +139,9 @@ func (mo *MemoryOptimizer) SetGCThreshold(threshold float64) {
 	mo.mu.Lock()
 	mo.gcThreshold = threshold
 	mo.mu.Unlock()
+}
+
+func (mo *MemoryOptimizer) ReleaseMemory() {
+	runtime.GC()
+	debug.FreeOSMemory()
 }

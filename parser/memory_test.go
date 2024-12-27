@@ -32,7 +32,7 @@ func TestNewMemoryOptimizer(t *testing.T) {
 				return
 			}
 
-			if optimizer.maxMemory != tt.maxMemoryMB*1024*1024 {
+			if optimizer.maxMemory != uint64(tt.maxMemoryMB*1024*1024) {
 				t.Errorf("Expected max memory %d, got %d", tt.maxMemoryMB*1024*1024, optimizer.maxMemory)
 			}
 			if optimizer.gcThreshold != tt.gcThreshold {
@@ -98,7 +98,7 @@ func TestMemoryOptimizer_Configuration(t *testing.T) {
 	// Test SetMaxMemory
 	newMaxMemory := int64(2048)
 	optimizer.SetMaxMemory(newMaxMemory)
-	if optimizer.maxMemory != newMaxMemory*1024*1024 {
+	if optimizer.maxMemory != uint64(newMaxMemory*1024*1024) {
 		t.Errorf("Expected max memory %d, got %d", newMaxMemory*1024*1024, optimizer.maxMemory)
 	}
 
@@ -128,13 +128,13 @@ func TestMemoryOptimizer_StatsCollection(t *testing.T) {
 	}
 
 	// Verify stats fields
-	if stats.AllocatedBytes == 0 {
+	if stats.Alloc == 0 {
 		t.Error("Expected non-zero allocated bytes")
 	}
-	if stats.TotalAllocBytes == 0 {
+	if stats.TotalAlloc == 0 {
 		t.Error("Expected non-zero total allocated bytes")
 	}
-	if stats.SystemBytes == 0 {
+	if stats.Sys == 0 {
 		t.Error("Expected non-zero system bytes")
 	}
 }
