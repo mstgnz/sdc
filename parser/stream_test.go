@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -96,7 +97,7 @@ func TestStreamParser_ParseStream(t *testing.T) {
 				reader = strings.NewReader(tt.input)
 			}
 
-			err := parser.ParseStream(context.Background(), reader)
+			_, err := parser.ParseStream(context.Background(), reader)
 			if tt.expectError && err == nil {
 				t.Error("Expected error but got none")
 			}
@@ -127,21 +128,46 @@ func TestStreamParser_Timeout(t *testing.T) {
 	parser := NewStreamParser(StreamParserConfig{
 		Workers:   1,
 		BatchSize: 1024,
-		Timeout:   time.Millisecond * 100,
+		Timeout:   time.Millisecond * 1,
 	})
 
-	// Create a context that will timeout
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*50)
-	defer cancel()
+	// Büyük bir input oluştur
+	var largeInput strings.Builder
+	for i := 0; i < 100000; i++ {
+		largeInput.WriteString("SELECT * FROM users WHERE id = " + strconv.Itoa(i) + ";\n")
+	}
 
-	// Create a large input that will take time to process
-	largeInput := strings.Repeat("SELECT * FROM users;", 1000)
-	reader := strings.NewReader(largeInput)
+	// Yavaş okuyucu oluştur
+	slowReader := &slowReader{
+		data:  []byte(largeInput.String()),
+		delay: time.Millisecond * 10,
+	}
 
-	err := parser.ParseStream(ctx, reader)
+	// Context'i iptal etmeden çalıştır
+	_, err := parser.ParseStream(context.Background(), slowReader)
 	if err == nil {
 		t.Error("Expected timeout error but got none")
 	}
+	if !strings.Contains(err.Error(), "parsing timeout") {
+		t.Errorf("Expected parsing timeout error, got: %v", err)
+	}
+}
+
+// slowReader, her okumada belirli bir süre bekleyen bir io.Reader
+type slowReader struct {
+	data  []byte
+	pos   int
+	delay time.Duration
+}
+
+func (r *slowReader) Read(p []byte) (n int, err error) {
+	if r.pos >= len(r.data) {
+		return 0, io.EOF
+	}
+	time.Sleep(r.delay)
+	n = copy(p, r.data[r.pos:])
+	r.pos += n
+	return n, nil
 }
 
 type mockTemporaryError struct{}
@@ -218,7 +244,8 @@ func TestStreamParser_ConcurrentParsing(t *testing.T) {
 	for _, input := range inputs {
 		go func(sql string) {
 			reader := strings.NewReader(sql)
-			errChan <- parser.ParseStream(ctx, reader)
+			_, err := parser.ParseStream(ctx, reader)
+			errChan <- err
 		}(input)
 	}
 

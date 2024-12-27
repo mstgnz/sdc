@@ -87,62 +87,67 @@ func NewStreamParser(config StreamParserConfig) *StreamParser {
 }
 
 // ParseStream parses SQL statements from a stream
-func (sp *StreamParser) ParseStream(ctx context.Context, reader io.Reader) error {
+func (sp *StreamParser) ParseStream(ctx context.Context, reader io.Reader) ([]*Statement, error) {
 	if reader == nil {
-		return ErrInvalidInput
+		return nil, errors.New("nil reader")
 	}
 
-	// Create buffered reader
-	bufReader := bufio.NewReaderSize(reader, sp.batchSize)
+	// Timeout kontrolü için context
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 
-	// Create worker pool
-	var wg sync.WaitGroup
-	errChan := make(chan error, sp.workers)
+	// Zaman aşımı kontrolü için timer
+	timer := time.NewTimer(sp.timeout)
+	defer timer.Stop()
 
-	// Start parsing
-	for {
-		select {
-		case <-ctx.Done():
-			wg.Wait()
-			return ctx.Err()
-		default:
-			// Get buffer from pool
-			buf := sp.getBuffer()
-			defer sp.putBuffer(buf)
+	done := make(chan struct{})
+	var statements []*Statement
+	var parseErr error
 
-			// Read batch
-			n, err := sp.readBatch(bufReader, buf)
-			if err != nil {
-				if err == io.EOF {
-					wg.Wait()
-					return nil
-				}
-				return err
-			}
+	go func() {
+		defer close(done)
+		scanner := bufio.NewScanner(reader)
+		// Scanner buffer boyutunu artır
+		buf := make([]byte, 0, 64*1024)
+		scanner.Buffer(buf, 1024*1024)
+		scanner.Split(bufio.ScanLines)
 
-			// Process batch
-			batch := buf[:n]
-			if len(batch) > 0 {
-				wg.Add(1)
-				go func(b []byte) {
-					defer wg.Done()
-					if err := sp.processBatch(ctx, b); err != nil {
-						select {
-						case errChan <- err:
-						default:
-							sp.errorHandler(err)
-						}
-					}
-				}(batch)
-			}
-
-			// Check for errors
+		var currentStatement strings.Builder
+		for scanner.Scan() {
 			select {
-			case err := <-errChan:
-				return err
+			case <-ctx.Done():
+				parseErr = ctx.Err()
+				return
 			default:
+				line := scanner.Text()
+				currentStatement.WriteString(line + "\n")
+
+				if strings.HasSuffix(strings.TrimSpace(line), ";") {
+					stmt := &Statement{
+						Query: currentStatement.String(),
+					}
+					statements = append(statements, stmt)
+					currentStatement.Reset()
+				}
 			}
 		}
+
+		if scanner.Err() != nil {
+			parseErr = scanner.Err()
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-timer.C:
+		return nil, errors.New("parsing timeout")
+	case <-done:
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		return statements, nil
 	}
 }
 
