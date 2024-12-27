@@ -8,35 +8,35 @@ import (
 )
 
 type MySQL struct {
-	schema *sqlporter.SchemaType
+	schema *sqlporter.Schema
 }
 
-// NewMySQL yeni bir MySQL parser instance'ı oluşturur
+// NewMySQL creates a new MySQL parser instance
 func NewMySQL() *MySQL {
 	return &MySQL{
-		schema: &sqlporter.SchemaType{},
+		schema: &sqlporter.Schema{},
 	}
 }
 
-// Parse MySQL dump'ını parse eder
-func (m *MySQL) Parse(content string) (*sqlporter.SchemaType, error) {
+// Parse parses MySQL dump content
+func (m *MySQL) Parse(content string) (*sqlporter.Schema, error) {
 	if content == "" {
-		return nil, errors.New("boş içerik")
+		return nil, errors.New("empty content")
 	}
 
-	// TODO: MySQL dump parsing işlemleri burada yapılacak
+	// TODO: MySQL dump parsing operations will be implemented here
 	return m.schema, nil
 }
 
-// Generate verilen şemadan MySQL dump'ı oluşturur
-func (m *MySQL) Generate(schema *sqlporter.SchemaType) (string, error) {
+// Generate generates MySQL dump from schema
+func (m *MySQL) Generate(schema *sqlporter.Schema) (string, error) {
 	if schema == nil {
-		return "", errors.New("boş şema")
+		return "", errors.New("empty schema")
 	}
 
 	var result strings.Builder
 
-	// TODO: MySQL dump generation işlemleri burada yapılacak
+	// TODO: MySQL dump generation operations will be implemented here
 
 	return result.String(), nil
 }

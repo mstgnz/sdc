@@ -13,11 +13,11 @@ func TestSQLServer_Parse(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:    "Boş içerik",
+			name:    "Empty content",
 			content: "",
 			wantErr: true,
 		},
-		// TODO: Daha fazla test senaryosu eklenecek
+		// TODO: More test cases will be added
 	}
 
 	for _, tt := range tests {
@@ -34,15 +34,15 @@ func TestSQLServer_Parse(t *testing.T) {
 func TestSQLServer_Generate(t *testing.T) {
 	tests := []struct {
 		name    string
-		schema  *sqlporter.SchemaType
+		schema  *sqlporter.Schema
 		wantErr bool
 	}{
 		{
-			name:    "Boş şema",
+			name:    "Empty schema",
 			schema:  nil,
 			wantErr: true,
 		},
-		// TODO: Daha fazla test senaryosu eklenecek
+		// TODO: More test cases will be added
 	}
 
 	for _, tt := range tests {

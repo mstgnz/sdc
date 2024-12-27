@@ -8,35 +8,35 @@ import (
 )
 
 type SQLServer struct {
-	schema *sqlporter.SchemaType
+	schema *sqlporter.Schema
 }
 
-// NewSQLServer yeni bir SQLServer parser instance'ı oluşturur
+// NewSQLServer creates a new SQLServer parser instance
 func NewSQLServer() *SQLServer {
 	return &SQLServer{
-		schema: &sqlporter.SchemaType{},
+		schema: &sqlporter.Schema{},
 	}
 }
 
-// Parse SQLServer dump'ını parse eder
-func (s *SQLServer) Parse(content string) (*sqlporter.SchemaType, error) {
+// Parse parses SQLServer dump content
+func (s *SQLServer) Parse(content string) (*sqlporter.Schema, error) {
 	if content == "" {
-		return nil, errors.New("boş içerik")
+		return nil, errors.New("empty content")
 	}
 
-	// TODO: SQLServer dump parsing işlemleri burada yapılacak
+	// TODO: SQLServer dump parsing operations will be implemented here
 	return s.schema, nil
 }
 
-// Generate verilen şemadan SQLServer dump'ı oluşturur
-func (s *SQLServer) Generate(schema *sqlporter.SchemaType) (string, error) {
+// Generate generates SQLServer dump from schema
+func (s *SQLServer) Generate(schema *sqlporter.Schema) (string, error) {
 	if schema == nil {
-		return "", errors.New("boş şema")
+		return "", errors.New("empty schema")
 	}
 
 	var result strings.Builder
 
-	// TODO: SQLServer dump generation işlemleri burada yapılacak
+	// TODO: SQLServer dump generation operations will be implemented here
 
 	return result.String(), nil
 }

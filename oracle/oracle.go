@@ -8,35 +8,35 @@ import (
 )
 
 type Oracle struct {
-	schema *sqlporter.SchemaType
+	schema *sqlporter.Schema
 }
 
-// NewOracle yeni bir Oracle parser instance'ı oluşturur
+// NewOracle creates a new Oracle parser instance
 func NewOracle() *Oracle {
 	return &Oracle{
-		schema: &sqlporter.SchemaType{},
+		schema: &sqlporter.Schema{},
 	}
 }
 
-// Parse Oracle dump'ını parse eder
-func (o *Oracle) Parse(content string) (*sqlporter.SchemaType, error) {
+// Parse parses Oracle dump content
+func (o *Oracle) Parse(content string) (*sqlporter.Schema, error) {
 	if content == "" {
-		return nil, errors.New("boş içerik")
+		return nil, errors.New("empty content")
 	}
 
-	// TODO: Oracle dump parsing işlemleri burada yapılacak
+	// TODO: Oracle dump parsing operations will be implemented here
 	return o.schema, nil
 }
 
-// Generate verilen şemadan Oracle dump'ı oluşturur
-func (o *Oracle) Generate(schema *sqlporter.SchemaType) (string, error) {
+// Generate generates Oracle dump from schema
+func (o *Oracle) Generate(schema *sqlporter.Schema) (string, error) {
 	if schema == nil {
-		return "", errors.New("boş şema")
+		return "", errors.New("empty schema")
 	}
 
 	var result strings.Builder
 
-	// TODO: Oracle dump generation işlemleri burada yapılacak
+	// TODO: Oracle dump generation operations will be implemented here
 
 	return result.String(), nil
 }

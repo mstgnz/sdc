@@ -1,6 +1,6 @@
 package sqlporter
 
-// Database türlerini tanımlayan enum
+// DatabaseType represents the supported database types
 type DatabaseType string
 
 const (
@@ -11,30 +11,30 @@ const (
 	SQLite     DatabaseType = "sqlite"
 )
 
-// SchemaType veritabanı şemasını temsil eder
-type SchemaType struct {
+// Schema represents a database schema
+type Schema struct {
 	Name        string
-	Tables      []TableType
-	Procedures  []ProcedureType
-	Functions   []FunctionType
-	Triggers    []TriggerType
-	Views       []ViewType
-	Sequences   []SequenceType
-	Extensions  []ExtensionType
-	Permissions []PermissionType
+	Tables      []Table
+	Procedures  []Procedure
+	Functions   []Function
+	Triggers    []Trigger
+	Views       []View
+	Sequences   []Sequence
+	Extensions  []Extension
+	Permissions []Permission
 }
 
-// TableType veritabanı tablosunu temsil eder
-type TableType struct {
+// Table represents a database table
+type Table struct {
 	Name        string
-	Columns     []ColumnType
-	Indexes     []IndexType
-	Constraints []ConstraintType
-	Data        []RowType
+	Columns     []Column
+	Indexes     []Index
+	Constraints []Constraint
+	Data        []Row
 }
 
-// ColumnType tablo kolonunu temsil eder
-type ColumnType struct {
+// Column represents a table column
+type Column struct {
 	Name          string
 	DataType      string
 	Length        int
@@ -46,17 +46,17 @@ type ColumnType struct {
 	Comment       string
 }
 
-// IndexType tablo indeksini temsil eder
-type IndexType struct {
+// Index represents a table index
+type Index struct {
 	Name      string
 	Columns   []string
 	IsUnique  bool
-	Type      string // BTREE, HASH vs.
-	Condition string // WHERE koşulu
+	Type      string // BTREE, HASH etc.
+	Condition string // WHERE clause
 }
 
-// ConstraintType tablo kısıtlamalarını temsil eder
-type ConstraintType struct {
+// Constraint represents a table constraint
+type Constraint struct {
 	Name            string
 	Type            string // PRIMARY KEY, FOREIGN KEY, UNIQUE, CHECK
 	Columns         []string
@@ -67,37 +67,37 @@ type ConstraintType struct {
 	CheckExpression string
 }
 
-// RowType tablo verisini temsil eder
-type RowType struct {
+// Row represents table data
+type Row struct {
 	Values map[string]interface{}
 }
 
-// ProcedureType stored procedure'ü temsil eder
-type ProcedureType struct {
+// Procedure represents a stored procedure
+type Procedure struct {
 	Name       string
-	Parameters []ParameterType
+	Parameters []Parameter
 	Body       string
 	Language   string
 }
 
-// FunctionType fonksiyonu temsil eder
-type FunctionType struct {
+// Function represents a database function
+type Function struct {
 	Name       string
-	Parameters []ParameterType
+	Parameters []Parameter
 	Returns    string
 	Body       string
 	Language   string
 }
 
-// ParameterType prosedür ve fonksiyon parametrelerini temsil eder
-type ParameterType struct {
+// Parameter represents a procedure or function parameter
+type Parameter struct {
 	Name      string
 	DataType  string
 	Direction string // IN, OUT, INOUT
 }
 
-// TriggerType tetikleyiciyi temsil eder
-type TriggerType struct {
+// Trigger represents a database trigger
+type Trigger struct {
 	Name       string
 	Table      string
 	Timing     string // BEFORE, AFTER, INSTEAD OF
@@ -107,15 +107,15 @@ type TriggerType struct {
 	Condition  string
 }
 
-// ViewType görünümü temsil eder
-type ViewType struct {
+// View represents a database view
+type View struct {
 	Name       string
 	Definition string
 	IsMaterial bool
 }
 
-// SequenceType sıralayıcıyı temsil eder
-type SequenceType struct {
+// Sequence represents a database sequence
+type Sequence struct {
 	Name       string
 	Start      int64
 	Increment  int64
@@ -126,15 +126,15 @@ type SequenceType struct {
 	CurrentVal int64
 }
 
-// ExtensionType veritabanı eklentisini temsil eder
-type ExtensionType struct {
+// Extension represents a database extension
+type Extension struct {
 	Name    string
 	Version string
 	Schema  string
 }
 
-// PermissionType yetkilendirmeyi temsil eder
-type PermissionType struct {
+// Permission represents a database permission
+type Permission struct {
 	Object      string
 	ObjectType  string
 	Grantee     string
@@ -142,8 +142,8 @@ type PermissionType struct {
 	GrantOption bool
 }
 
-// ParserType veritabanı dump'larını işlemek için arayüz
-type ParserType interface {
-	Parse(content string) (*SchemaType, error)
-	Generate(schema *SchemaType) (string, error)
+// Parser represents an interface for database dump operations
+type Parser interface {
+	Parse(content string) (*Schema, error)
+	Generate(schema *Schema) (string, error)
 }

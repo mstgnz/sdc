@@ -8,35 +8,35 @@ import (
 )
 
 type SQLite struct {
-	schema *sqlporter.SchemaType
+	schema *sqlporter.Schema
 }
 
-// NewSQLite yeni bir SQLite parser instance'ı oluşturur
+// NewSQLite creates a new SQLite parser instance
 func NewSQLite() *SQLite {
 	return &SQLite{
-		schema: &sqlporter.SchemaType{},
+		schema: &sqlporter.Schema{},
 	}
 }
 
-// Parse SQLite dump'ını parse eder
-func (s *SQLite) Parse(content string) (*sqlporter.SchemaType, error) {
+// Parse parses SQLite dump content
+func (s *SQLite) Parse(content string) (*sqlporter.Schema, error) {
 	if content == "" {
-		return nil, errors.New("boş içerik")
+		return nil, errors.New("empty content")
 	}
 
-	// TODO: SQLite dump parsing işlemleri burada yapılacak
+	// TODO: SQLite dump parsing operations will be implemented here
 	return s.schema, nil
 }
 
-// Generate verilen şemadan SQLite dump'ı oluşturur
-func (s *SQLite) Generate(schema *sqlporter.SchemaType) (string, error) {
+// Generate generates SQLite dump from schema
+func (s *SQLite) Generate(schema *sqlporter.Schema) (string, error) {
 	if schema == nil {
-		return "", errors.New("boş şema")
+		return "", errors.New("empty schema")
 	}
 
 	var result strings.Builder
 
-	// TODO: SQLite dump generation işlemleri burada yapılacak
+	// TODO: SQLite dump generation operations will be implemented here
 
 	return result.String(), nil
 }
