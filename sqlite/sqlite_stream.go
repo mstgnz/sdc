@@ -1,4 +1,4 @@
-package mysql
+package sqlite
 
 import (
 	"fmt"
@@ -9,20 +9,20 @@ import (
 	"github.com/mstgnz/sqlmapper"
 )
 
-// MySQLStreamParser implements the StreamParser interface for MySQL
-type MySQLStreamParser struct {
-	mysql *MySQL
+// SQLiteStreamParser implements the StreamParser interface for SQLite
+type SQLiteStreamParser struct {
+	sqlite *SQLite
 }
 
-// NewMySQLStreamParser creates a new MySQL stream parser
-func NewMySQLStreamParser() *MySQLStreamParser {
-	return &MySQLStreamParser{
-		mysql: NewMySQL(),
+// NewSQLiteStreamParser creates a new SQLite stream parser
+func NewSQLiteStreamParser() *SQLiteStreamParser {
+	return &SQLiteStreamParser{
+		sqlite: NewSQLite(),
 	}
 }
 
 // ParseStream implements the StreamParser interface
-func (p *MySQLStreamParser) ParseStream(reader io.Reader, callback func(sqlmapper.SchemaObject) error) error {
+func (p *SQLiteStreamParser) ParseStream(reader io.Reader, callback func(sqlmapper.SchemaObject) error) error {
 	streamReader := sqlmapper.NewStreamReader(reader, ";")
 
 	for {
@@ -73,33 +73,17 @@ func (p *MySQLStreamParser) ParseStream(reader io.Reader, callback func(sqlmappe
 			continue
 		}
 
-		// Parse CREATE FUNCTION statements
-		if strings.HasPrefix(strings.ToUpper(statement), "CREATE FUNCTION") {
-			function, err := p.parseFunctionStatement(statement)
+		// Parse CREATE INDEX statements
+		if strings.HasPrefix(strings.ToUpper(statement), "CREATE INDEX") ||
+			strings.HasPrefix(strings.ToUpper(statement), "CREATE UNIQUE INDEX") {
+			index, err := p.parseIndexStatement(statement)
 			if err != nil {
 				return err
 			}
 
 			err = callback(sqlmapper.SchemaObject{
-				Type: sqlmapper.FunctionObject,
-				Data: function,
-			})
-			if err != nil {
-				return err
-			}
-			continue
-		}
-
-		// Parse CREATE PROCEDURE statements
-		if strings.HasPrefix(strings.ToUpper(statement), "CREATE PROCEDURE") {
-			procedure, err := p.parseProcedureStatement(statement)
-			if err != nil {
-				return err
-			}
-
-			err = callback(sqlmapper.SchemaObject{
-				Type: sqlmapper.ProcedureObject,
-				Data: procedure,
+				Type: sqlmapper.IndexObject,
+				Data: index,
 			})
 			if err != nil {
 				return err
@@ -128,8 +112,8 @@ func (p *MySQLStreamParser) ParseStream(reader io.Reader, callback func(sqlmappe
 	return nil
 }
 
-// ParseStreamParallel implements parallel processing for MySQL stream parsing
-func (p *MySQLStreamParser) ParseStreamParallel(reader io.Reader, callback func(sqlmapper.SchemaObject) error, workers int) error {
+// ParseStreamParallel implements parallel processing for SQLite stream parsing
+func (p *SQLiteStreamParser) ParseStreamParallel(reader io.Reader, callback func(sqlmapper.SchemaObject) error, workers int) error {
 	streamReader := sqlmapper.NewStreamReader(reader, ";")
 	statements := make(chan string, workers)
 	results := make(chan sqlmapper.SchemaObject, workers)
@@ -198,7 +182,7 @@ func (p *MySQLStreamParser) ParseStreamParallel(reader io.Reader, callback func(
 }
 
 // parseStatement parses a single SQL statement and returns a SchemaObject
-func (p *MySQLStreamParser) parseStatement(statement string) (*sqlmapper.SchemaObject, error) {
+func (p *SQLiteStreamParser) parseStatement(statement string) (*sqlmapper.SchemaObject, error) {
 	upperStatement := strings.ToUpper(statement)
 
 	switch {
@@ -222,24 +206,24 @@ func (p *MySQLStreamParser) parseStatement(statement string) (*sqlmapper.SchemaO
 			Data: view,
 		}, nil
 
-	case strings.HasPrefix(upperStatement, "CREATE FUNCTION"):
-		function, err := p.parseFunctionStatement(statement)
+	case strings.HasPrefix(upperStatement, "CREATE INDEX"):
+		index, err := p.parseIndexStatement(statement)
 		if err != nil {
 			return nil, err
 		}
 		return &sqlmapper.SchemaObject{
-			Type: sqlmapper.FunctionObject,
-			Data: function,
+			Type: sqlmapper.IndexObject,
+			Data: index,
 		}, nil
 
-	case strings.HasPrefix(upperStatement, "CREATE PROCEDURE"):
-		procedure, err := p.parseProcedureStatement(statement)
+	case strings.HasPrefix(upperStatement, "CREATE TRIGGER"):
+		trigger, err := p.parseTriggerStatement(statement)
 		if err != nil {
 			return nil, err
 		}
 		return &sqlmapper.SchemaObject{
-			Type: sqlmapper.ProcedureObject,
-			Data: procedure,
+			Type: sqlmapper.TriggerObject,
+			Data: trigger,
 		}, nil
 	}
 
@@ -247,19 +231,60 @@ func (p *MySQLStreamParser) parseStatement(statement string) (*sqlmapper.SchemaO
 }
 
 // GenerateStream implements the StreamParser interface
-func (p *MySQLStreamParser) GenerateStream(schema *sqlmapper.Schema, writer io.Writer) error {
+func (p *SQLiteStreamParser) GenerateStream(schema *sqlmapper.Schema, writer io.Writer) error {
 	// Generate tables
 	for _, table := range schema.Tables {
-		sql := p.mysql.generateTableSQL(table)
-		_, err := writer.Write([]byte(sql + ";\n\n"))
+		sql := "CREATE TABLE " + table.Name + " (\n"
+
+		// Generate columns
+		for i, col := range table.Columns {
+			sql += "    " + col.Name + " " + col.DataType
+			if col.Length > 0 {
+				sql += fmt.Sprintf("(%d", col.Length)
+				if col.Scale > 0 {
+					sql += fmt.Sprintf(",%d", col.Scale)
+				}
+				sql += ")"
+			}
+
+			if col.IsPrimaryKey {
+				sql += " PRIMARY KEY"
+				if col.AutoIncrement {
+					sql += " AUTOINCREMENT"
+				}
+			}
+			if !col.IsNullable {
+				sql += " NOT NULL"
+			}
+			if col.IsUnique {
+				sql += " UNIQUE"
+			}
+			if col.DefaultValue != "" {
+				sql += " DEFAULT " + col.DefaultValue
+			}
+
+			if i < len(table.Columns)-1 {
+				sql += ",\n"
+			}
+		}
+
+		sql += "\n);\n\n"
+
+		_, err := writer.Write([]byte(sql))
 		if err != nil {
 			return err
 		}
 
-		// Generate indexes for this table
+		// Generate indexes
 		for _, index := range table.Indexes {
-			sql := p.mysql.generateIndexSQL(table.Name, index)
-			_, err := writer.Write([]byte(sql + ";\n"))
+			if index.IsUnique {
+				sql = "CREATE UNIQUE INDEX "
+			} else {
+				sql = "CREATE INDEX "
+			}
+			sql += index.Name + " ON " + table.Name + " (" + strings.Join(index.Columns, ", ") + ");\n"
+
+			_, err := writer.Write([]byte(sql))
 			if err != nil {
 				return err
 			}
@@ -268,54 +293,25 @@ func (p *MySQLStreamParser) GenerateStream(schema *sqlmapper.Schema, writer io.W
 
 	// Generate views
 	for _, view := range schema.Views {
-		sql := fmt.Sprintf("CREATE VIEW %s AS %s", view.Name, view.Definition)
-		_, err := writer.Write([]byte(sql + ";\n\n"))
+		sql := fmt.Sprintf("CREATE VIEW %s AS\n%s;\n\n", view.Name, view.Definition)
+		_, err := writer.Write([]byte(sql))
 		if err != nil {
 			return err
 		}
 	}
 
-	// Generate functions
-	for _, function := range schema.Functions {
-		if !function.IsProc {
-			sql := fmt.Sprintf("CREATE FUNCTION %s(", function.Name)
-			for i, param := range function.Parameters {
-				if i > 0 {
-					sql += ", "
-				}
-				sql += fmt.Sprintf("%s %s", param.Name, param.DataType)
-			}
-			sql += fmt.Sprintf(") RETURNS %s\n%s", function.Returns, function.Body)
-			_, err := writer.Write([]byte(sql + ";\n\n"))
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	// Generate procedures
-	for _, function := range schema.Functions {
-		if function.IsProc {
-			sql := fmt.Sprintf("CREATE PROCEDURE %s(", function.Name)
-			for i, param := range function.Parameters {
-				if i > 0 {
-					sql += ", "
-				}
-				sql += fmt.Sprintf("%s %s", param.Name, param.DataType)
-			}
-			sql += fmt.Sprintf(")\n%s", function.Body)
-			_, err := writer.Write([]byte(sql + ";\n\n"))
-			if err != nil {
-				return err
-			}
-		}
-	}
-
 	// Generate triggers
 	for _, trigger := range schema.Triggers {
-		sql := fmt.Sprintf("CREATE TRIGGER %s %s %s ON %s\n%s",
-			trigger.Name, trigger.Timing, trigger.Event, trigger.Table, trigger.Body)
-		_, err := writer.Write([]byte(sql + ";\n\n"))
+		sql := fmt.Sprintf("CREATE TRIGGER %s\n%s %s ON %s\n",
+			trigger.Name, trigger.Timing, trigger.Event, trigger.Table)
+		if trigger.ForEachRow {
+			sql += "FOR EACH ROW\n"
+		}
+		if trigger.Condition != "" {
+			sql += "WHEN " + trigger.Condition + "\n"
+		}
+		sql += "BEGIN\n" + trigger.Body + "\nEND;\n\n"
+		_, err := writer.Write([]byte(sql))
 		if err != nil {
 			return err
 		}
@@ -324,12 +320,12 @@ func (p *MySQLStreamParser) GenerateStream(schema *sqlmapper.Schema, writer io.W
 	return nil
 }
 
-func (p *MySQLStreamParser) parseTableStatement(statement string) (*sqlmapper.Table, error) {
+func (p *SQLiteStreamParser) parseTableStatement(statement string) (*sqlmapper.Table, error) {
 	// Create a temporary schema to parse the table
 	tempSchema := &sqlmapper.Schema{}
-	p.mysql.schema = tempSchema
+	p.sqlite.schema = tempSchema
 
-	if err := p.mysql.parseTables(statement); err != nil {
+	if err := p.sqlite.parseTables(statement); err != nil {
 		return nil, err
 	}
 
@@ -340,12 +336,12 @@ func (p *MySQLStreamParser) parseTableStatement(statement string) (*sqlmapper.Ta
 	return &tempSchema.Tables[0], nil
 }
 
-func (p *MySQLStreamParser) parseViewStatement(statement string) (*sqlmapper.View, error) {
+func (p *SQLiteStreamParser) parseViewStatement(statement string) (*sqlmapper.View, error) {
 	// Create a temporary schema to parse the view
 	tempSchema := &sqlmapper.Schema{}
-	p.mysql.schema = tempSchema
+	p.sqlite.schema = tempSchema
 
-	if err := p.mysql.parseViews(statement); err != nil {
+	if err := p.sqlite.parseViews(statement); err != nil {
 		return nil, err
 	}
 
@@ -356,44 +352,31 @@ func (p *MySQLStreamParser) parseViewStatement(statement string) (*sqlmapper.Vie
 	return &tempSchema.Views[0], nil
 }
 
-func (p *MySQLStreamParser) parseFunctionStatement(statement string) (*sqlmapper.Function, error) {
-	// Create a temporary schema to parse the function
+func (p *SQLiteStreamParser) parseIndexStatement(statement string) (*sqlmapper.Index, error) {
+	// Create a temporary schema to parse the index
 	tempSchema := &sqlmapper.Schema{}
-	p.mysql.schema = tempSchema
+	p.sqlite.schema = tempSchema
 
-	if err := p.mysql.parseFunctions(statement); err != nil {
+	if err := p.sqlite.parseIndexes(statement); err != nil {
 		return nil, err
 	}
 
-	if len(tempSchema.Functions) == 0 {
-		return nil, fmt.Errorf("no function found in statement")
+	// Find the first table with indexes
+	for _, table := range tempSchema.Tables {
+		if len(table.Indexes) > 0 {
+			return &table.Indexes[0], nil
+		}
 	}
 
-	return &tempSchema.Functions[0], nil
+	return nil, fmt.Errorf("no index found in statement")
 }
 
-func (p *MySQLStreamParser) parseProcedureStatement(statement string) (*sqlmapper.Function, error) {
-	// Create a temporary schema to parse the procedure
-	tempSchema := &sqlmapper.Schema{}
-	p.mysql.schema = tempSchema
-
-	if err := p.mysql.parseFunctions(statement); err != nil {
-		return nil, err
-	}
-
-	if len(tempSchema.Functions) == 0 {
-		return nil, fmt.Errorf("no procedure found in statement")
-	}
-
-	return &tempSchema.Functions[0], nil
-}
-
-func (p *MySQLStreamParser) parseTriggerStatement(statement string) (*sqlmapper.Trigger, error) {
+func (p *SQLiteStreamParser) parseTriggerStatement(statement string) (*sqlmapper.Trigger, error) {
 	// Create a temporary schema to parse the trigger
 	tempSchema := &sqlmapper.Schema{}
-	p.mysql.schema = tempSchema
+	p.sqlite.schema = tempSchema
 
-	if err := p.mysql.parseTriggers(statement); err != nil {
+	if err := p.sqlite.parseTriggers(statement); err != nil {
 		return nil, err
 	}
 

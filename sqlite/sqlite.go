@@ -389,3 +389,28 @@ func (s *SQLite) Generate(schema *sqlmapper.Schema) (string, error) {
 
 	return s.buf.String(), nil
 }
+
+func (s *SQLite) parseTables(statement string) error {
+	// TODO: Implement table parsing
+	return nil
+}
+
+func (s *SQLite) parseViews(statement string) error {
+	// TODO: Implement view parsing
+	return nil
+}
+
+func (s *SQLite) parseFunctions(statement string) error {
+	// TODO: Implement function parsing
+	return nil
+}
+
+func (s *SQLite) parseTriggers(statement string) error {
+	// TODO: Implement trigger parsing
+	return nil
+}
+
+func (s *SQLite) parseIndexes(statement string) error {
+	// TODO: Implement index parsing
+	return nil
+}

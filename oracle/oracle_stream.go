@@ -1,4 +1,4 @@
-package postgres
+package oracle
 
 import (
 	"fmt"
@@ -9,21 +9,21 @@ import (
 	"github.com/mstgnz/sqlmapper"
 )
 
-// PostgreSQLStreamParser implements the StreamParser interface for PostgreSQL
-type PostgreSQLStreamParser struct {
-	postgres *PostgreSQL
+// OracleStreamParser implements the StreamParser interface for Oracle
+type OracleStreamParser struct {
+	oracle *Oracle
 }
 
-// NewPostgreSQLStreamParser creates a new PostgreSQL stream parser
-func NewPostgreSQLStreamParser() *PostgreSQLStreamParser {
-	return &PostgreSQLStreamParser{
-		postgres: NewPostgreSQL(),
+// NewOracleStreamParser creates a new Oracle stream parser
+func NewOracleStreamParser() *OracleStreamParser {
+	return &OracleStreamParser{
+		oracle: NewOracle(),
 	}
 }
 
 // ParseStream implements the StreamParser interface
-func (p *PostgreSQLStreamParser) ParseStream(reader io.Reader, callback func(sqlmapper.SchemaObject) error) error {
-	streamReader := sqlmapper.NewStreamReader(reader, ";")
+func (p *OracleStreamParser) ParseStream(reader io.Reader, callback func(sqlmapper.SchemaObject) error) error {
+	streamReader := sqlmapper.NewStreamReader(reader, "/")
 
 	for {
 		statement, err := streamReader.ReadStatement()
@@ -36,23 +36,6 @@ func (p *PostgreSQLStreamParser) ParseStream(reader io.Reader, callback func(sql
 
 		statement = strings.TrimSpace(statement)
 		if statement == "" {
-			continue
-		}
-
-		// Parse CREATE TYPE statements
-		if strings.HasPrefix(strings.ToUpper(statement), "CREATE TYPE") {
-			typ, err := p.parseTypeStatement(statement)
-			if err != nil {
-				return err
-			}
-
-			err = callback(sqlmapper.SchemaObject{
-				Type: sqlmapper.TypeObject,
-				Data: typ,
-			})
-			if err != nil {
-				return err
-			}
 			continue
 		}
 
@@ -142,9 +125,44 @@ func (p *PostgreSQLStreamParser) ParseStream(reader io.Reader, callback func(sql
 			continue
 		}
 
+		// Parse CREATE SEQUENCE statements
+		if strings.HasPrefix(strings.ToUpper(statement), "CREATE SEQUENCE") {
+			sequence, err := p.parseSequenceStatement(statement)
+			if err != nil {
+				return err
+			}
+
+			err = callback(sqlmapper.SchemaObject{
+				Type: sqlmapper.SequenceObject,
+				Data: sequence,
+			})
+			if err != nil {
+				return err
+			}
+			continue
+		}
+
+		// Parse CREATE TYPE statements
+		if strings.HasPrefix(strings.ToUpper(statement), "CREATE TYPE") {
+			typ, err := p.parseTypeStatement(statement)
+			if err != nil {
+				return err
+			}
+
+			err = callback(sqlmapper.SchemaObject{
+				Type: sqlmapper.TypeObject,
+				Data: typ,
+			})
+			if err != nil {
+				return err
+			}
+			continue
+		}
+
 		// Parse CREATE INDEX statements
 		if strings.HasPrefix(strings.ToUpper(statement), "CREATE INDEX") ||
-			strings.HasPrefix(strings.ToUpper(statement), "CREATE UNIQUE INDEX") {
+			strings.HasPrefix(strings.ToUpper(statement), "CREATE UNIQUE INDEX") ||
+			strings.HasPrefix(strings.ToUpper(statement), "CREATE BITMAP INDEX") {
 			index, err := p.parseIndexStatement(statement)
 			if err != nil {
 				return err
@@ -159,32 +177,14 @@ func (p *PostgreSQLStreamParser) ParseStream(reader io.Reader, callback func(sql
 			}
 			continue
 		}
-
-		// Parse GRANT/REVOKE statements
-		if strings.HasPrefix(strings.ToUpper(statement), "GRANT") ||
-			strings.HasPrefix(strings.ToUpper(statement), "REVOKE") {
-			permission, err := p.parsePermissionStatement(statement)
-			if err != nil {
-				return err
-			}
-
-			err = callback(sqlmapper.SchemaObject{
-				Type: sqlmapper.PermissionObject,
-				Data: permission,
-			})
-			if err != nil {
-				return err
-			}
-			continue
-		}
 	}
 
 	return nil
 }
 
-// ParseStreamParallel implements parallel processing for PostgreSQL stream parsing
-func (p *PostgreSQLStreamParser) ParseStreamParallel(reader io.Reader, callback func(sqlmapper.SchemaObject) error, workers int) error {
-	streamReader := sqlmapper.NewStreamReader(reader, ";")
+// ParseStreamParallel implements parallel processing for Oracle stream parsing
+func (p *OracleStreamParser) ParseStreamParallel(reader io.Reader, callback func(sqlmapper.SchemaObject) error, workers int) error {
+	streamReader := sqlmapper.NewStreamReader(reader, "/")
 	statements := make(chan string, workers)
 	results := make(chan sqlmapper.SchemaObject, workers)
 	errors := make(chan error, workers)
@@ -252,20 +252,10 @@ func (p *PostgreSQLStreamParser) ParseStreamParallel(reader io.Reader, callback 
 }
 
 // parseStatement parses a single SQL statement and returns a SchemaObject
-func (p *PostgreSQLStreamParser) parseStatement(statement string) (*sqlmapper.SchemaObject, error) {
+func (p *OracleStreamParser) parseStatement(statement string) (*sqlmapper.SchemaObject, error) {
 	upperStatement := strings.ToUpper(statement)
 
 	switch {
-	case strings.HasPrefix(upperStatement, "CREATE TYPE"):
-		typ, err := p.parseTypeStatement(statement)
-		if err != nil {
-			return nil, err
-		}
-		return &sqlmapper.SchemaObject{
-			Type: sqlmapper.TypeObject,
-			Data: typ,
-		}, nil
-
 	case strings.HasPrefix(upperStatement, "CREATE TABLE"):
 		table, err := p.parseTableStatement(statement)
 		if err != nil {
@@ -276,7 +266,8 @@ func (p *PostgreSQLStreamParser) parseStatement(statement string) (*sqlmapper.Sc
 			Data: table,
 		}, nil
 
-	case strings.HasPrefix(upperStatement, "CREATE VIEW") || strings.HasPrefix(upperStatement, "CREATE MATERIALIZED VIEW"):
+	case strings.HasPrefix(upperStatement, "CREATE VIEW") ||
+		strings.HasPrefix(upperStatement, "CREATE MATERIALIZED VIEW"):
 		view, err := p.parseViewStatement(statement)
 		if err != nil {
 			return nil, err
@@ -316,7 +307,29 @@ func (p *PostgreSQLStreamParser) parseStatement(statement string) (*sqlmapper.Sc
 			Data: trigger,
 		}, nil
 
-	case strings.HasPrefix(upperStatement, "CREATE INDEX"):
+	case strings.HasPrefix(upperStatement, "CREATE SEQUENCE"):
+		sequence, err := p.parseSequenceStatement(statement)
+		if err != nil {
+			return nil, err
+		}
+		return &sqlmapper.SchemaObject{
+			Type: sqlmapper.SequenceObject,
+			Data: sequence,
+		}, nil
+
+	case strings.HasPrefix(upperStatement, "CREATE TYPE"):
+		typ, err := p.parseTypeStatement(statement)
+		if err != nil {
+			return nil, err
+		}
+		return &sqlmapper.SchemaObject{
+			Type: sqlmapper.TypeObject,
+			Data: typ,
+		}, nil
+
+	case strings.HasPrefix(upperStatement, "CREATE INDEX") ||
+		strings.HasPrefix(upperStatement, "CREATE UNIQUE INDEX") ||
+		strings.HasPrefix(upperStatement, "CREATE BITMAP INDEX"):
 		index, err := p.parseIndexStatement(statement)
 		if err != nil {
 			return nil, err
@@ -325,31 +338,48 @@ func (p *PostgreSQLStreamParser) parseStatement(statement string) (*sqlmapper.Sc
 			Type: sqlmapper.IndexObject,
 			Data: index,
 		}, nil
-
-	case strings.HasPrefix(upperStatement, "GRANT"):
-		permission, err := p.parsePermissionStatement(statement)
-		if err != nil {
-			return nil, err
-		}
-		return &sqlmapper.SchemaObject{
-			Type: sqlmapper.PermissionObject,
-			Data: permission,
-		}, nil
 	}
 
 	return nil, nil
 }
 
 // GenerateStream implements the StreamParser interface
-func (p *PostgreSQLStreamParser) GenerateStream(schema *sqlmapper.Schema, writer io.Writer) error {
+func (p *OracleStreamParser) GenerateStream(schema *sqlmapper.Schema, writer io.Writer) error {
 	// Generate types
 	for _, typ := range schema.Types {
-		if typ.Kind == "ENUM" {
-			sql := fmt.Sprintf("CREATE TYPE %s AS ENUM (%s);\n\n", typ.Name, typ.Definition)
-			_, err := writer.Write([]byte(sql))
-			if err != nil {
-				return err
-			}
+		sql := fmt.Sprintf("CREATE TYPE %s AS %s;\n/\n\n", typ.Name, typ.Definition)
+		_, err := writer.Write([]byte(sql))
+		if err != nil {
+			return err
+		}
+	}
+
+	// Generate sequences
+	for _, sequence := range schema.Sequences {
+		sql := fmt.Sprintf("CREATE SEQUENCE %s\n", sequence.Name)
+		if sequence.StartValue > 0 {
+			sql += fmt.Sprintf("START WITH %d\n", sequence.StartValue)
+		}
+		if sequence.IncrementBy > 0 {
+			sql += fmt.Sprintf("INCREMENT BY %d\n", sequence.IncrementBy)
+		}
+		if sequence.MinValue > 0 {
+			sql += fmt.Sprintf("MINVALUE %d\n", sequence.MinValue)
+		}
+		if sequence.MaxValue > 0 {
+			sql += fmt.Sprintf("MAXVALUE %d\n", sequence.MaxValue)
+		}
+		if sequence.Cache > 0 {
+			sql += fmt.Sprintf("CACHE %d\n", sequence.Cache)
+		}
+		if sequence.Cycle {
+			sql += "CYCLE\n"
+		}
+		sql += ";\n/\n\n"
+
+		_, err := writer.Write([]byte(sql))
+		if err != nil {
+			return err
 		}
 	}
 
@@ -359,29 +389,23 @@ func (p *PostgreSQLStreamParser) GenerateStream(schema *sqlmapper.Schema, writer
 
 		// Generate columns
 		for i, col := range table.Columns {
-			sql += "    " + col.Name + " "
+			sql += "    " + col.Name + " " + col.DataType
+			if col.Length > 0 {
+				sql += fmt.Sprintf("(%d", col.Length)
+				if col.Scale > 0 {
+					sql += fmt.Sprintf(",%d", col.Scale)
+				}
+				sql += ")"
+			}
 
-			if col.IsPrimaryKey && strings.ToUpper(col.DataType) == "SERIAL" {
-				sql += "SERIAL PRIMARY KEY"
-			} else {
-				sql += col.DataType
-				if col.Length > 0 {
-					sql += fmt.Sprintf("(%d", col.Length)
-					if col.Scale > 0 {
-						sql += fmt.Sprintf(",%d", col.Scale)
-					}
-					sql += ")"
-				}
-
-				if !col.IsNullable {
-					sql += " NOT NULL"
-				}
-				if col.IsUnique {
-					sql += " UNIQUE"
-				}
-				if col.DefaultValue != "" {
-					sql += " DEFAULT " + col.DefaultValue
-				}
+			if !col.IsNullable {
+				sql += " NOT NULL"
+			}
+			if col.IsUnique {
+				sql += " UNIQUE"
+			}
+			if col.DefaultValue != "" {
+				sql += " DEFAULT " + col.DefaultValue
 			}
 
 			if i < len(table.Columns)-1 {
@@ -389,7 +413,7 @@ func (p *PostgreSQLStreamParser) GenerateStream(schema *sqlmapper.Schema, writer
 			}
 		}
 
-		sql += "\n);\n\n"
+		sql += "\n);\n/\n\n"
 
 		_, err := writer.Write([]byte(sql))
 		if err != nil {
@@ -398,16 +422,15 @@ func (p *PostgreSQLStreamParser) GenerateStream(schema *sqlmapper.Schema, writer
 
 		// Generate indexes
 		for _, index := range table.Indexes {
-			if index.IsUnique {
+			if index.IsBitmap {
+				sql = "CREATE BITMAP INDEX "
+			} else if index.IsUnique {
 				sql = "CREATE UNIQUE INDEX "
 			} else {
 				sql = "CREATE INDEX "
 			}
-			sql += index.Name + " ON " + table.Name
-			if index.Type != "" {
-				sql += " USING " + index.Type
-			}
-			sql += " (" + strings.Join(index.Columns, ", ") + ");\n"
+
+			sql += index.Name + " ON " + table.Name + " (" + strings.Join(index.Columns, ", ") + ");\n/\n"
 
 			_, err := writer.Write([]byte(sql))
 			if err != nil {
@@ -419,13 +442,13 @@ func (p *PostgreSQLStreamParser) GenerateStream(schema *sqlmapper.Schema, writer
 	// Generate views
 	for _, view := range schema.Views {
 		if view.IsMaterialized {
-			sql := fmt.Sprintf("CREATE MATERIALIZED VIEW %s AS\n%s;\n\n", view.Name, view.Definition)
+			sql := fmt.Sprintf("CREATE MATERIALIZED VIEW %s AS\n%s;\n/\n\n", view.Name, view.Definition)
 			_, err := writer.Write([]byte(sql))
 			if err != nil {
 				return err
 			}
 		} else {
-			sql := fmt.Sprintf("CREATE VIEW %s AS\n%s;\n\n", view.Name, view.Definition)
+			sql := fmt.Sprintf("CREATE VIEW %s AS\n%s;\n/\n\n", view.Name, view.Definition)
 			_, err := writer.Write([]byte(sql))
 			if err != nil {
 				return err
@@ -443,8 +466,8 @@ func (p *PostgreSQLStreamParser) GenerateStream(schema *sqlmapper.Schema, writer
 				}
 				sql += fmt.Sprintf("%s %s", param.Name, param.DataType)
 			}
-			sql += fmt.Sprintf(") RETURNS %s\nLANGUAGE %s\nAS $$\n%s\n$$;\n\n",
-				function.Returns, function.Language, function.Body)
+			sql += fmt.Sprintf(")\nRETURN %s\nIS\nBEGIN\n%s\nEND;\n/\n\n",
+				function.Returns, function.Body)
 			_, err := writer.Write([]byte(sql))
 			if err != nil {
 				return err
@@ -462,8 +485,7 @@ func (p *PostgreSQLStreamParser) GenerateStream(schema *sqlmapper.Schema, writer
 				}
 				sql += fmt.Sprintf("%s %s", param.Name, param.DataType)
 			}
-			sql += fmt.Sprintf(")\nLANGUAGE %s\nAS $$\n%s\n$$;\n\n",
-				function.Language, function.Body)
+			sql += fmt.Sprintf(")\nIS\nBEGIN\n%s\nEND;\n/\n\n", function.Body)
 			_, err := writer.Write([]byte(sql))
 			if err != nil {
 				return err
@@ -479,9 +501,9 @@ func (p *PostgreSQLStreamParser) GenerateStream(schema *sqlmapper.Schema, writer
 			sql += "FOR EACH ROW\n"
 		}
 		if trigger.Condition != "" {
-			sql += "WHEN (" + trigger.Condition + ")\n"
+			sql += "WHEN " + trigger.Condition + "\n"
 		}
-		sql += "EXECUTE FUNCTION " + trigger.Body + ";\n\n"
+		sql += fmt.Sprintf("BEGIN\n%s\nEND;\n/\n\n", trigger.Body)
 		_, err := writer.Write([]byte(sql))
 		if err != nil {
 			return err
@@ -491,28 +513,12 @@ func (p *PostgreSQLStreamParser) GenerateStream(schema *sqlmapper.Schema, writer
 	return nil
 }
 
-func (p *PostgreSQLStreamParser) parseTypeStatement(statement string) (*sqlmapper.Type, error) {
-	// Create a temporary schema to parse the type
-	tempSchema := &sqlmapper.Schema{}
-	p.postgres.schema = tempSchema
-
-	if err := p.postgres.parseTypes(statement); err != nil {
-		return nil, err
-	}
-
-	if len(tempSchema.Types) == 0 {
-		return nil, fmt.Errorf("no type found in statement")
-	}
-
-	return &tempSchema.Types[0], nil
-}
-
-func (p *PostgreSQLStreamParser) parseTableStatement(statement string) (*sqlmapper.Table, error) {
+func (p *OracleStreamParser) parseTableStatement(statement string) (*sqlmapper.Table, error) {
 	// Create a temporary schema to parse the table
 	tempSchema := &sqlmapper.Schema{}
-	p.postgres.schema = tempSchema
+	p.oracle.schema = tempSchema
 
-	if err := p.postgres.parseTables(statement); err != nil {
+	if err := p.oracle.parseTables(statement); err != nil {
 		return nil, err
 	}
 
@@ -523,12 +529,12 @@ func (p *PostgreSQLStreamParser) parseTableStatement(statement string) (*sqlmapp
 	return &tempSchema.Tables[0], nil
 }
 
-func (p *PostgreSQLStreamParser) parseViewStatement(statement string) (*sqlmapper.View, error) {
+func (p *OracleStreamParser) parseViewStatement(statement string) (*sqlmapper.View, error) {
 	// Create a temporary schema to parse the view
 	tempSchema := &sqlmapper.Schema{}
-	p.postgres.schema = tempSchema
+	p.oracle.schema = tempSchema
 
-	if err := p.postgres.parseViews(statement); err != nil {
+	if err := p.oracle.parseViews(statement); err != nil {
 		return nil, err
 	}
 
@@ -539,12 +545,12 @@ func (p *PostgreSQLStreamParser) parseViewStatement(statement string) (*sqlmappe
 	return &tempSchema.Views[0], nil
 }
 
-func (p *PostgreSQLStreamParser) parseFunctionStatement(statement string) (*sqlmapper.Function, error) {
+func (p *OracleStreamParser) parseFunctionStatement(statement string) (*sqlmapper.Function, error) {
 	// Create a temporary schema to parse the function
 	tempSchema := &sqlmapper.Schema{}
-	p.postgres.schema = tempSchema
+	p.oracle.schema = tempSchema
 
-	if err := p.postgres.parseFunctions(statement); err != nil {
+	if err := p.oracle.parseFunctions(statement); err != nil {
 		return nil, err
 	}
 
@@ -555,12 +561,12 @@ func (p *PostgreSQLStreamParser) parseFunctionStatement(statement string) (*sqlm
 	return &tempSchema.Functions[0], nil
 }
 
-func (p *PostgreSQLStreamParser) parseProcedureStatement(statement string) (*sqlmapper.Function, error) {
+func (p *OracleStreamParser) parseProcedureStatement(statement string) (*sqlmapper.Function, error) {
 	// Create a temporary schema to parse the procedure
 	tempSchema := &sqlmapper.Schema{}
-	p.postgres.schema = tempSchema
+	p.oracle.schema = tempSchema
 
-	if err := p.postgres.parseFunctions(statement); err != nil {
+	if err := p.oracle.parseFunctions(statement); err != nil {
 		return nil, err
 	}
 
@@ -571,12 +577,12 @@ func (p *PostgreSQLStreamParser) parseProcedureStatement(statement string) (*sql
 	return &tempSchema.Functions[0], nil
 }
 
-func (p *PostgreSQLStreamParser) parseTriggerStatement(statement string) (*sqlmapper.Trigger, error) {
+func (p *OracleStreamParser) parseTriggerStatement(statement string) (*sqlmapper.Trigger, error) {
 	// Create a temporary schema to parse the trigger
 	tempSchema := &sqlmapper.Schema{}
-	p.postgres.schema = tempSchema
+	p.oracle.schema = tempSchema
 
-	if err := p.postgres.parseTriggers(statement); err != nil {
+	if err := p.oracle.parseTriggers(statement); err != nil {
 		return nil, err
 	}
 
@@ -587,12 +593,44 @@ func (p *PostgreSQLStreamParser) parseTriggerStatement(statement string) (*sqlma
 	return &tempSchema.Triggers[0], nil
 }
 
-func (p *PostgreSQLStreamParser) parseIndexStatement(statement string) (*sqlmapper.Index, error) {
+func (p *OracleStreamParser) parseSequenceStatement(statement string) (*sqlmapper.Sequence, error) {
+	// Create a temporary schema to parse the sequence
+	tempSchema := &sqlmapper.Schema{}
+	p.oracle.schema = tempSchema
+
+	if err := p.oracle.parseSequences(statement); err != nil {
+		return nil, err
+	}
+
+	if len(tempSchema.Sequences) == 0 {
+		return nil, fmt.Errorf("no sequence found in statement")
+	}
+
+	return &tempSchema.Sequences[0], nil
+}
+
+func (p *OracleStreamParser) parseTypeStatement(statement string) (*sqlmapper.Type, error) {
+	// Create a temporary schema to parse the type
+	tempSchema := &sqlmapper.Schema{}
+	p.oracle.schema = tempSchema
+
+	if err := p.oracle.parseTypes(statement); err != nil {
+		return nil, err
+	}
+
+	if len(tempSchema.Types) == 0 {
+		return nil, fmt.Errorf("no type found in statement")
+	}
+
+	return &tempSchema.Types[0], nil
+}
+
+func (p *OracleStreamParser) parseIndexStatement(statement string) (*sqlmapper.Index, error) {
 	// Create a temporary schema to parse the index
 	tempSchema := &sqlmapper.Schema{}
-	p.postgres.schema = tempSchema
+	p.oracle.schema = tempSchema
 
-	if err := p.postgres.parseIndexes(statement); err != nil {
+	if err := p.oracle.parseIndexes(statement); err != nil {
 		return nil, err
 	}
 
@@ -604,20 +642,4 @@ func (p *PostgreSQLStreamParser) parseIndexStatement(statement string) (*sqlmapp
 	}
 
 	return nil, fmt.Errorf("no index found in statement")
-}
-
-func (p *PostgreSQLStreamParser) parsePermissionStatement(statement string) (*sqlmapper.Permission, error) {
-	// Create a temporary schema to parse the permission
-	tempSchema := &sqlmapper.Schema{}
-	p.postgres.schema = tempSchema
-
-	if err := p.postgres.parsePermissions(statement); err != nil {
-		return nil, err
-	}
-
-	if len(tempSchema.Permissions) == 0 {
-		return nil, fmt.Errorf("no permission found in statement")
-	}
-
-	return &tempSchema.Permissions[0], nil
 }

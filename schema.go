@@ -70,6 +70,8 @@ type Index struct {
 	Name        string
 	Columns     []string
 	IsUnique    bool
+	IsBitmap    bool   // Oracle için bitmap indeks desteği
+	IsClustered bool   // SQL Server için clustered indeks desteği
 	Type        string // BTREE, HASH etc.
 	Condition   string // WHERE clause
 	TableSpace  string

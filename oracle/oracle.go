@@ -556,3 +556,38 @@ func (o *Oracle) Generate(schema *sqlmapper.Schema) (string, error) {
 
 	return result.String(), nil
 }
+
+func (o *Oracle) parseTables(statement string) error {
+	// TODO: Implement table parsing
+	return nil
+}
+
+func (o *Oracle) parseViews(statement string) error {
+	// TODO: Implement view parsing
+	return nil
+}
+
+func (o *Oracle) parseFunctions(statement string) error {
+	// TODO: Implement function parsing
+	return nil
+}
+
+func (o *Oracle) parseTriggers(statement string) error {
+	// TODO: Implement trigger parsing
+	return nil
+}
+
+func (o *Oracle) parseSequences(statement string) error {
+	// TODO: Implement sequence parsing
+	return nil
+}
+
+func (o *Oracle) parseTypes(statement string) error {
+	// TODO: Implement type parsing
+	return nil
+}
+
+func (o *Oracle) parseIndexes(statement string) error {
+	// TODO: Implement index parsing
+	return nil
+}

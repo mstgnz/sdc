@@ -607,3 +607,28 @@ func (s *SQLServer) parseCreateTrigger(stmt []byte) (sqlmapper.Trigger, error) {
 
 	return trigger, nil
 }
+
+func (s *SQLServer) parseTables(statement string) error {
+	// TODO: Implement table parsing
+	return nil
+}
+
+func (s *SQLServer) parseViews(statement string) error {
+	// TODO: Implement view parsing
+	return nil
+}
+
+func (s *SQLServer) parseFunctions(statement string) error {
+	// TODO: Implement function parsing
+	return nil
+}
+
+func (s *SQLServer) parseTriggers(statement string) error {
+	// TODO: Implement trigger parsing
+	return nil
+}
+
+func (s *SQLServer) parseIndexes(statement string) error {
+	// TODO: Implement index parsing
+	return nil
+}
