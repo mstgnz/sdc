@@ -2,29 +2,56 @@
 
 SQLMapper is a powerful Go library that enables SQL dump conversion between different database systems. It provides a comprehensive solution for database schema migration, comparison, and conversion tasks.
 
-## Features
+## Command Line Interface (CLI)
 
-- **Multi-Database Support**: 
-  - MySQL
-  - PostgreSQL
-  - SQLite
-  - Oracle
-  - SQL Server
+Convert SQL dumps between different database types with a simple command:
 
-- **Core Functionalities**:
-  - SQL dump parsing and conversion
-  - Schema migration support
-  - Database schema comparison
-  - Structured logging system
-  - Thread-safe operations
+```bash
+sqlmapper --file=<path_to_sql_file> --to=<target_database>
+```
 
-## Installation
+### Installation
+
+```bash
+go install github.com/mstgnz/sqlmapper/cmd/sqlmapper@latest
+```
+
+### Examples
+
+Convert PostgreSQL dump to MySQL:
+```bash
+sqlmapper --file=database.sql --to=mysql
+# Output: database_mysql.sql
+```
+
+Convert MySQL dump to SQLite:
+```bash
+sqlmapper --file=dump.sql --to=sqlite
+# Output: dump_sqlite.sql
+```
+
+Convert Oracle dump to PostgreSQL:
+```bash
+sqlmapper --file=schema.sql --to=postgres
+# Output: schema_postgres.sql
+```
+
+### Auto-detection
+
+SQLMapper automatically detects the source database type based on SQL syntax patterns:
+- MySQL: Detects `ENGINE=INNODB`
+- SQLite: Detects `AUTOINCREMENT`
+- SQL Server: Detects `IDENTITY`
+- PostgreSQL: Detects `SERIAL`
+- Oracle: Detects `NUMBER(` syntax
+
+## Library Usage
+
+### Installation
 
 ```bash
 go get github.com/mstgnz/sqlmapper
 ```
-
-## Quick Start
 
 ### Basic Usage
 
@@ -56,6 +83,22 @@ comparer := schema.NewSchemaComparer(sourceTables, targetTables)
 // Find differences
 differences := comparer.Compare()
 ```
+
+## Features
+
+- **Multi-Database Support**: 
+  - MySQL
+  - PostgreSQL
+  - SQLite
+  - Oracle
+  - SQL Server
+
+- **Core Functionalities**:
+  - SQL dump parsing and conversion
+  - Schema migration support
+  - Database schema comparison
+  - Structured logging system
+  - Thread-safe operations
 
 ## Supported Database Objects
 
@@ -97,12 +140,8 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License - see the [LICENSE](LICENSE) file for details.
 
 ## Support
 
 For support and questions, please open an issue in the GitHub repository.
-
-## Documentation
-
-For detailed documentation and examples, visit our [GitHub repository](https://github.com/mstgnz/sqlmapper).
