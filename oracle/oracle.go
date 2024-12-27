@@ -1,3 +1,5 @@
+// Package oracle provides functionality for parsing and generating Oracle database schemas.
+// It implements the Parser interface for handling Oracle specific SQL syntax and schema structures.
 package oracle
 
 import (
@@ -9,18 +11,35 @@ import (
 	"github.com/mstgnz/sqlmapper"
 )
 
+// Oracle represents an Oracle parser implementation that handles parsing and generating
+// Oracle database schemas. It maintains an internal schema representation and provides
+// methods for converting between Oracle SQL and the common schema format.
 type Oracle struct {
 	schema *sqlmapper.Schema
 }
 
-// NewOracle creates a new Oracle parser instance
+// NewOracle creates and initializes a new Oracle parser instance.
+// It returns a parser that can handle Oracle specific SQL syntax and schema structures.
 func NewOracle() *Oracle {
 	return &Oracle{
 		schema: &sqlmapper.Schema{},
 	}
 }
 
-// Parse parses Oracle dump content
+// Parse takes an Oracle SQL dump content and parses it into a common schema structure.
+// It processes various Oracle objects including:
+// - Tables with columns and constraints
+// - Sequences
+// - Views
+// - Triggers
+// - User privileges
+//
+// Parameters:
+//   - content: The Oracle SQL dump content to parse
+//
+// Returns:
+//   - *sqlmapper.Schema: The parsed schema structure
+//   - error: An error if parsing fails or if the content is empty
 func (o *Oracle) Parse(content string) (*sqlmapper.Schema, error) {
 	if content == "" {
 		return nil, errors.New("empty content")
@@ -109,7 +128,19 @@ func (o *Oracle) Parse(content string) (*sqlmapper.Schema, error) {
 	return o.schema, nil
 }
 
-// parseCreateTable parses CREATE TABLE statement
+// parseCreateTable processes a CREATE TABLE statement and extracts table structure.
+// It handles various table components including:
+// - Table name and schema
+// - Column definitions with data types and constraints
+// - Table-level constraints (PRIMARY KEY, FOREIGN KEY, UNIQUE, CHECK)
+// - Column-level constraints and properties
+//
+// Parameters:
+//   - stmt: The CREATE TABLE statement to parse
+//
+// Returns:
+//   - sqlmapper.Table: The parsed table structure
+//   - error: An error if parsing fails
 func (o *Oracle) parseCreateTable(stmt string) (sqlmapper.Table, error) {
 	table := sqlmapper.Table{}
 
@@ -262,7 +293,19 @@ func (o *Oracle) parseCreateTable(stmt string) (sqlmapper.Table, error) {
 	return table, nil
 }
 
-// parseCreateSequence parses CREATE SEQUENCE statement
+// parseCreateSequence processes a CREATE SEQUENCE statement.
+// It extracts sequence properties including:
+// - Sequence name and schema
+// - Start value and increment
+// - Min and max values
+// - Cycle option
+//
+// Parameters:
+//   - stmt: The CREATE SEQUENCE statement to parse
+//
+// Returns:
+//   - sqlmapper.Sequence: The parsed sequence structure
+//   - error: An error if parsing fails
 func (o *Oracle) parseCreateSequence(stmt string) (sqlmapper.Sequence, error) {
 	seq := sqlmapper.Sequence{}
 
@@ -290,7 +333,18 @@ func (o *Oracle) parseCreateSequence(stmt string) (sqlmapper.Sequence, error) {
 	return seq, nil
 }
 
-// parseCreateView parses CREATE VIEW statement
+// parseCreateView processes a CREATE VIEW statement.
+// It extracts view properties including:
+// - View name and schema
+// - View definition (SELECT statement)
+// - View options (FORCE, WITH CHECK OPTION)
+//
+// Parameters:
+//   - stmt: The CREATE VIEW statement to parse
+//
+// Returns:
+//   - sqlmapper.View: The parsed view structure
+//   - error: An error if parsing fails
 func (o *Oracle) parseCreateView(stmt string) (sqlmapper.View, error) {
 	view := sqlmapper.View{}
 
@@ -310,7 +364,20 @@ func (o *Oracle) parseCreateView(stmt string) (sqlmapper.View, error) {
 	return view, nil
 }
 
-// parseCreateTrigger parses CREATE TRIGGER statement
+// parseCreateTrigger processes a CREATE TRIGGER statement.
+// It extracts trigger properties including:
+// - Trigger name and schema
+// - Triggering event (INSERT, UPDATE, DELETE)
+// - Trigger timing (BEFORE, AFTER, INSTEAD OF)
+// - Table name
+// - Trigger body
+//
+// Parameters:
+//   - stmt: The CREATE TRIGGER statement to parse
+//
+// Returns:
+//   - sqlmapper.Trigger: The parsed trigger structure
+//   - error: An error if parsing fails
 func (o *Oracle) parseCreateTrigger(stmt string) (sqlmapper.Trigger, error) {
 	trigger := sqlmapper.Trigger{}
 
@@ -357,7 +424,20 @@ func (o *Oracle) parseCreateTrigger(stmt string) (sqlmapper.Trigger, error) {
 	return trigger, nil
 }
 
-// Generate generates Oracle dump from schema
+// Generate creates an Oracle SQL dump from a schema structure.
+// It generates SQL statements for all database objects in the schema, including:
+// - Tables with columns, constraints, and indexes
+// - Sequences
+// - Views
+// - Triggers
+// - User privileges
+//
+// Parameters:
+//   - schema: The schema structure to convert to Oracle SQL
+//
+// Returns:
+//   - string: The generated Oracle SQL statements
+//   - error: An error if generation fails or if the schema is nil
 func (o *Oracle) Generate(schema *sqlmapper.Schema) (string, error) {
 	if schema == nil {
 		return "", errors.New("empty schema")
@@ -365,17 +445,17 @@ func (o *Oracle) Generate(schema *sqlmapper.Schema) (string, error) {
 
 	var result strings.Builder
 
-	// Sequence'leri oluştur
+	// Create sequences
 	for _, seq := range schema.Sequences {
 		result.WriteString(fmt.Sprintf("CREATE SEQUENCE %s START WITH %d INCREMENT BY %d;\n\n",
 			seq.Name, seq.StartValue, seq.IncrementBy))
 	}
 
-	// Tabloları oluştur
+	// Create tables
 	for _, table := range schema.Tables {
 		result.WriteString(fmt.Sprintf("CREATE TABLE %s (\n", table.Name))
 
-		// Kolonları ekle
+		// Add columns
 		for i, col := range table.Columns {
 			result.WriteString(fmt.Sprintf("    %s %s", col.Name, col.DataType))
 			if col.Length > 0 {
@@ -391,7 +471,7 @@ func (o *Oracle) Generate(schema *sqlmapper.Schema) (string, error) {
 				result.WriteString(" NOT NULL")
 			}
 			if col.DefaultValue != "" {
-				// String tipindeki default değerler için tırnak işareti ekle
+				// Add quotes for default values of type String
 				if strings.HasPrefix(col.DataType, "VARCHAR") || strings.HasPrefix(col.DataType, "CHAR") {
 					result.WriteString(fmt.Sprintf(" DEFAULT '%s'", col.DefaultValue))
 				} else {
@@ -407,7 +487,7 @@ func (o *Oracle) Generate(schema *sqlmapper.Schema) (string, error) {
 			result.WriteString("\n")
 		}
 
-		// Constraint'leri ekle
+		// Add Constraint
 		for i, constraint := range table.Constraints {
 			if constraint.Name == "" {
 				continue // Skip unnamed constraints as they are handled with column definitions
@@ -447,13 +527,13 @@ func (o *Oracle) Generate(schema *sqlmapper.Schema) (string, error) {
 		result.WriteString("\n")
 	}
 
-	// View'ları oluştur
+	// Create views
 	for _, view := range schema.Views {
 		result.WriteString(fmt.Sprintf("CREATE OR REPLACE VIEW %s AS\n%s;\n\n",
 			view.Name, view.Definition))
 	}
 
-	// Trigger'ları oluştur
+	// Create triggers
 	for _, trigger := range schema.Triggers {
 		result.WriteString(fmt.Sprintf("CREATE OR REPLACE TRIGGER %s\n", trigger.Name))
 		if trigger.Timing != "" {
