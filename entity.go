@@ -30,6 +30,7 @@ type Schema struct {
 	Users            []User
 	Clusters         []Cluster
 	MaterializedLogs []MaterializedViewLog
+	Types            []Type
 }
 
 // Table represents a database table
@@ -295,4 +296,12 @@ type StorageClause struct {
 type Parser interface {
 	Parse(content string) (*Schema, error)
 	Generate(schema *Schema) (string, error)
+}
+
+// Type represents a database type
+type Type struct {
+	Name       string
+	Schema     string
+	Kind       string // ENUM, COMPOSITE, DOMAIN, etc.
+	Definition string
 }
