@@ -10,6 +10,7 @@ The stream processing feature:
 - Supports all major database types
 - Provides real-time callback for processed objects
 - Handles large SQL files without loading entire content into memory
+- Includes comprehensive monitoring and logging system
 
 ## Usage
 

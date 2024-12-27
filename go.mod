@@ -2,7 +2,10 @@ module github.com/mstgnz/sqlmapper
 
 go 1.23
 
-require github.com/stretchr/testify v1.10.0
+require (
+	github.com/stretchr/testify v1.10.0
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
+)
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
