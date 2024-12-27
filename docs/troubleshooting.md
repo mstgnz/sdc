@@ -1,151 +1,227 @@
-# Troubleshooting Guide
+# SQLMapper Troubleshooting Guide
 
-## Common Issues
+## Table of Contents
+1. [Common Error Messages](#common-error-messages)
+2. [Database-Specific Issues](#database-specific-issues)
+3. [Performance Issues](#performance-issues)
+4. [Conversion Problems](#conversion-problems)
+5. [CLI Issues](#cli-issues)
 
-### 1. Conversion Errors
+## Common Error Messages
 
-#### Unsupported Data Types
-**Problem:** Some data types from the source database are not supported in the target database.
+### "Invalid SQL Syntax"
+**Problem**: SQLMapper fails to parse the input SQL file.
+**Solution**:
+1. Verify the source database type is correctly detected
+2. Check for unsupported SQL features
+3. Remove any database-specific comments or directives
+4. Split complex statements into simpler ones
 
-**Solution:**
-- Check the data type mapping table
-- Use alternative data types
-- Add custom conversion functions
+### "Unsupported Data Type"
+**Problem**: Encountered a data type that doesn't have a direct mapping.
+**Solution**:
+1. Check the data type mapping documentation
+2. Use the `--force-type-mapping` flag with a custom mapping
+3. Modify the source SQL to use a supported type
+4. Implement a custom type converter
 
-#### Syntax Errors
-**Problem:** SQL statements cannot be parsed or are invalid.
+### "File Access Error"
+**Problem**: Cannot read input file or write output file.
+**Solution**:
+1. Verify file permissions
+2. Check if the file path is correct
+3. Ensure sufficient disk space
+4. Run the command with appropriate privileges
 
-**Solution:**
-- Check SQL statement syntax
-- Verify database version compatibility
-- Simplify complex expressions
+## Database-Specific Issues
 
-### 2. Performance Issues
+### MySQL Issues
 
-#### Large Schema Conversions
-**Problem:** Converting large database schemas is slow.
+#### Character Set Conversion
+**Problem**: UTF8MB4 character set conversion fails.
+**Solution**:
+```sql
+-- Original MySQL
+ALTER TABLE users CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
-**Solution:**
-- Break schema into smaller parts
-- Remove unnecessary tables and fields
-- Optimize memory usage
+-- Modified for PostgreSQL
+-- Add this before table creation:
+SET client_encoding = 'UTF8';
+```
 
-#### Index Issues
-**Problem:** Indexes are not converting properly or causing performance issues.
+#### JSON Column Conversion
+**Problem**: JSON columns not properly converted.
+**Solution**:
+```sql
+-- MySQL
+ALTER TABLE data MODIFY COLUMN json_col JSON;
 
-**Solution:**
-- Check index type compatibility
-- Remove unnecessary indexes
-- Optimize index creation order
+-- PostgreSQL equivalent
+ALTER TABLE data ALTER COLUMN json_col TYPE JSONB USING json_col::JSONB;
 
-### 3. Data Integrity
+-- SQLite equivalent (stored as TEXT)
+ALTER TABLE data ALTER COLUMN json_col TEXT;
+```
 
-#### Foreign Key Constraints
-**Problem:** Foreign key constraints are not working properly.
+### PostgreSQL Issues
 
-**Solution:**
-- Check referential integrity
-- Adjust table creation order
-- Temporarily disable constraints
+#### Array Type Conversion
+**Problem**: Array types not supported in target database.
+**Solution**:
+```sql
+-- PostgreSQL source
+CREATE TABLE items (
+    id SERIAL,
+    tags TEXT[]
+);
 
-#### Character Set Issues
-**Problem:** Character encoding issues in text data.
+-- MySQL conversion
+CREATE TABLE items (
+    id INT AUTO_INCREMENT,
+    tags JSON,
+    PRIMARY KEY (id)
+);
 
-**Solution:**
-- Check character set and collation settings
-- Prefer UTF-8 usage
-- Escape special characters
+-- Add migration script:
+INSERT INTO items_new (id, tags)
+SELECT id, JSON_ARRAY(UNNEST(tags)) FROM items;
+```
 
-### 4. Database-Specific Issues
+### Oracle Issues
 
-#### MySQL to PostgreSQL
-**Problem:**
-- AUTO_INCREMENT behavior differs
-- ON UPDATE CURRENT_TIMESTAMP not supported
-- UNSIGNED data types not available
+#### ROWID Handling
+**Problem**: ROWID pseudo-column not supported.
+**Solution**:
+```sql
+-- Oracle source
+SELECT * FROM employees WHERE ROWID = 'AAASuZAABAAALvVAAA';
 
-**Solution:**
-- Use SERIAL or IDENTITY
-- Implement timestamp updates with triggers
-- Convert data types appropriately
+-- MySQL conversion
+ALTER TABLE employees ADD COLUMN row_identifier BIGINT AUTO_INCREMENT;
 
-#### PostgreSQL to SQLite
-**Problem:**
-- Complex data types not supported
-- Schema changes are limited
-- Advanced index types not available
+-- PostgreSQL conversion
+ALTER TABLE employees ADD COLUMN row_identifier BIGSERIAL;
+```
 
-**Solution:**
-- Convert to simple data types
-- Manage schema changes manually
-- Use alternative indexing strategies
+## Performance Issues
 
-#### SQLite to Oracle
-**Problem:**
-- Auto-incrementing fields work differently
-- Data type incompatibilities
-- Trigger syntax differences
+### Large File Processing
 
-**Solution:**
-- Use SEQUENCE and TRIGGER
-- Map data types to Oracle equivalents
-- Rewrite triggers
+**Problem**: Memory usage spikes with large SQL files.
+**Solution**:
+1. Use the `--chunk-size` flag to process in smaller batches
+2. Enable streaming mode with `--stream`
+3. Split large files into smaller ones
+4. Use the `--optimize-memory` flag
 
-## Best Practices
+Example:
+```bash
+sqlmapper --file=large_dump.sql --to=mysql --chunk-size=1000 --optimize-memory
+```
 
-1. **Testing**
-   - Test with small dataset first
-   - Verify all CRUD operations
-   - Perform performance tests
+### Slow Conversion Speed
 
-2. **Backup**
-   - Take backup before conversion
-   - Use incremental backup strategy
-   - Prepare rollback plan
+**Problem**: Conversion takes longer than expected.
+**Solution**:
+1. Enable parallel processing:
+```bash
+sqlmapper --file=dump.sql --to=postgres --parallel-workers=4
+```
 
-3. **Documentation**
-   - Document changes
-   - Note known issues
-   - Share solutions
+2. Optimize input SQL:
+```sql
+-- Before
+SELECT * FROM large_table WHERE complex_condition;
 
-4. **Monitoring**
-   - Check error logs
-   - Monitor performance metrics
-   - Evaluate user feedback
+-- After
+SELECT needed_columns FROM large_table WHERE simple_condition;
+```
 
-## Frequently Asked Questions
+## Conversion Problems
 
-### General Questions
+### Data Loss Prevention
 
-**Q: Which database versions does SQLMapper support?**
-A: Supports latest stable versions. Check documentation for detailed version compatibility.
+**Problem**: Potential data truncation during conversion.
+**Solution**:
+1. Use the `--strict` flag to fail on potential data loss
+2. Add data validation queries:
 
-**Q: Will there be data loss during conversion?**
-A: Data loss can be prevented with proper configuration and testing. Always take backups.
+```sql
+-- Check for oversized data
+SELECT column_name, MAX(LENGTH(column_name)) as max_length
+FROM table_name
+GROUP BY column_name
+HAVING max_length > new_size_limit;
+```
 
-**Q: Is it suitable for large databases?**
-A: Yes, but may require chunked conversion and optimization.
+### Constraint Violations
 
-### Technical Questions
+**Problem**: Foreign key constraints fail after conversion.
+**Solution**:
+1. Use `--defer-constraints` flag
+2. Add this to your conversion:
+```sql
+-- At the start
+SET FOREIGN_KEY_CHECKS = 0;  -- MySQL
+SET CONSTRAINTS ALL DEFERRED;  -- PostgreSQL
 
-**Q: How are custom data types handled?**
-A: You can add custom conversion functions or use default mappings.
+-- At the end
+SET FOREIGN_KEY_CHECKS = 1;  -- MySQL
+SET CONSTRAINTS ALL IMMEDIATE;  -- PostgreSQL
+```
 
-**Q: Are triggers and stored procedures converted?**
-A: Simple triggers are converted automatically, complex ones require manual intervention.
+## CLI Issues
 
-**Q: How are schema changes managed?**
-A: Change scripts are generated and applied in sequence.
+### Command Line Arguments
 
-## Contact and Support
+**Problem**: Incorrect argument format
+**Solution**:
+```bash
+# Incorrect
+sqlmapper -file dump.sql -to mysql
 
-- GitHub Issues: Bug reports and feature requests
-- Documentation: Detailed usage guides
-- Community: Discussion forums and contributions
+# Correct
+sqlmapper --file=dump.sql --to=mysql
+```
 
-## Version History
+### Environment Setup
 
-- v1.0.0: Initial stable release
-- v1.1.0: Performance improvements
-- v1.2.0: New database support
-- v1.3.0: Bug fixes and optimizations 
+**Problem**: Path or environment issues
+**Solution**:
+1. Add to PATH:
+```bash
+export PATH=$PATH:/path/to/sqlmapper/bin
+```
+
+2. Set required environment variables:
+```bash
+export SQLMAPPER_HOME=/path/to/sqlmapper
+export SQLMAPPER_CONFIG=/path/to/config.json
+```
+
+### Debug Mode
+
+When encountering unexpected issues:
+```bash
+sqlmapper --file=dump.sql --to=mysql --debug --verbose
+```
+
+This will provide:
+- Detailed error messages
+- Stack traces
+- SQL parsing steps
+- Conversion process logs
+
+### Common Flags Reference
+
+```bash
+--file=<path>           # Input SQL file
+--to=<database>         # Target database type
+--debug                 # Enable debug mode
+--verbose              # Detailed output
+--strict               # Strict conversion mode
+--force                # Ignore non-critical errors
+--dry-run              # Preview conversion
+--config=<path>        # Custom config file
+--output=<path>        # Output file path
+``` 
