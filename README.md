@@ -145,3 +145,64 @@ This project is licensed under the Apache License - see the [LICENSE](LICENSE) f
 ## Support
 
 For support and questions, please open an issue in the GitHub repository.
+
+## Benchmark Results
+
+The following benchmark results show the performance of SQLMapper for different database conversion scenarios. Tests were performed on Apple M1 processor.
+
+```
+goos: darwin
+goarch: arm64
+cpu: Apple M1
+
+BenchmarkMySQLToPostgreSQL-8        2130           2500152 ns/op         6943466 B/op      16046 allocs/op
+BenchmarkMySQLToSQLite-8            2101           2135750 ns/op         1656745 B/op       4274 allocs/op
+BenchmarkPostgreSQLToMySQL-8        1783           6188440 ns/op         8975810 B/op     138055 allocs/op
+BenchmarkSQLiteToMySQL-8          185398              6009 ns/op            9131 B/op        115 allocs/op
+```
+
+### Interpretation of Results
+
+1. **MySQL to PostgreSQL**
+   - Operations per second: ~2,130
+   - Average time per operation: ~2.50ms
+   - Memory allocation: ~6.9MB per operation
+   - Number of allocations: 16,046 per operation
+
+2. **MySQL to SQLite**
+   - Operations per second: ~2,101
+   - Average time per operation: ~2.14ms
+   - Memory allocation: ~1.7MB per operation
+   - Number of allocations: 4,274 per operation
+
+3. **PostgreSQL to MySQL**
+   - Operations per second: ~1,783
+   - Average time per operation: ~6.19ms
+   - Memory allocation: ~9.0MB per operation
+   - Number of allocations: 138,055 per operation
+
+4. **SQLite to MySQL** (with simplified schema)
+   - Operations per second: ~185,398
+   - Average time per operation: ~0.006ms
+   - Memory allocation: ~9KB per operation
+   - Number of allocations: 115 per operation
+
+### Test Scenarios
+
+1. **Complex Schema Tests** (MySQL to PostgreSQL/SQLite, PostgreSQL to MySQL):
+   - Multiple tables with various column types
+   - Foreign key constraints
+   - Indexes (including fulltext)
+   - Views
+   - Triggers
+   - JSON data type support
+   - ENUM types
+   - Timestamp auto-update features
+
+2. **Simple Schema Test** (SQLite to MySQL):
+   - Basic tables with common data types
+   - Simple constraints
+   - Basic view
+   - No triggers or complex features
+
+Note: The SQLite to MySQL test uses a simplified schema due to SQLite's limited support for complex database features.
