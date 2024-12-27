@@ -1,6 +1,6 @@
-# SQLPorter
+# SQLMapper
 
-SQLPorter is a powerful Go library that enables SQL dump conversion between different database systems. It provides a comprehensive solution for database schema migration, comparison, and conversion tasks.
+SQLMapper is a powerful Go library that enables SQL dump conversion between different database systems. It provides a comprehensive solution for database schema migration, comparison, and conversion tasks.
 
 ## Features
 
