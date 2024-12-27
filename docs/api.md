@@ -1,239 +1,225 @@
-# API Documentation
+# SQLMapper API Documentation
 
-## Contents
+## Overview
+SQLMapper provides a comprehensive API for converting SQL schemas between different database systems. This document outlines the main components and their usage.
+
+## Table of Contents
 - [Parser API](#parser-api)
 - [Converter API](#converter-api)
-- [Migration API](#migration-api)
-- [Database API](#database-api)
-- [Helper Functions](#helper-functions)
+- [Schema API](#schema-api)
+- [Error Handling](#error-handling)
+- [Examples](#examples)
 
 ## Parser API
 
-### NewParser
-
-Creates a new 
+### Creating a Parser
 
 ```go
-func NewParser(dialect string) (Parser, error)
+parser := mysql.NewMySQL()    // For MySQL
+parser := postgres.NewPostgreSQL()  // For PostgreSQL
+parser := sqlite.NewSQLite()  // For SQLite
+parser := oracle.NewOracle()  // For Oracle
+parser := sqlserver.NewSQLServer()  // For SQL Server
 ```
 
-**Parameters:**
-- `dialect`: Database dialect ("mysql", "postgres", "sqlite", "oracle", "sqlserver")
-
-**Return Values:**
-- `Parser`: Object implementing the Parser interface
-- `error`: In case of error
-
-### Parse
-
-Parses SQL dump file.
+Each parser implements the `Parser` interface:
 
 ```go
-func (p *Parser) Parse(sql string) (*Entity, error)
-```
-
-**Parameters:**
-- `sql`: SQL dump text to parse
-
-**Return Values:**
-- `*Entity`: Parsed data structure
-- `error`: In case of error
-
-## Converter API
-
-### Convert
-
-Converts a database schema to another database format.
-
-```go
-func Convert(sql, sourceDialect, targetDialect string) (string, error)
-```
-
-**Parameters:**
-- `sql`: SQL text to convert
-- `sourceDialect`: Source database dialect
-- `targetDialect`: Target database dialect
-
-**Return Values:**
-- `string`: Converted SQL text
-- `error`: In case of error
-
-### ConvertEntity
-
-Converts Entity structure to SQL.
-
-```go
-func (p *Parser) ConvertEntity(entity *Entity) (string, error)
-```
-
-**Parameters:**
-- `entity`: Entity structure to convert
-
-**Return Values:**
-- `string`: Generated SQL text
-- `error`: In case of error
-
-## Migration API
-
-### NewMigrationManager
-
-Creates a new migration manager.
-
-```go
-func NewMigrationManager(db *sql.DB) *MigrationManager
-```
-
-**Parameters:**
-- `db`: Database connection
-
-### Apply
-
-Applies migrations.
-
-```go
-func (m *MigrationManager) Apply(ctx context.Context) error
-```
-
-**Parameters:**
-- `ctx`: Context object
-
-**Return Values:**
-- `error`: In case of error
-
-### Rollback
-
-Rolls back the last migration.
-
-```go
-func (m *MigrationManager) Rollback(ctx context.Context) error
-```
-
-**Parameters:**
-- `ctx`: Context object
-
-**Return Values:**
-- `error`: In case of error
-
-## Database API
-
-### NewConnection
-
-Creates a new database connection.
-
-```go
-func NewConnection(config *Config) (*sql.DB, error)
-```
-
-**Parameters:**
-- `config`: Database configuration
-
-**Return Values:**
-- `*sql.DB`: Database connection
-- `error`: In case of error
-
-### Config Structure
-
-```go
-type Config struct {
-    Driver   string
-    Host     string
-    Port     int
-    Database string
-    Username string
-    Password string
-    SSLMode  string
-    Options  map[string]string
+type Parser interface {
+    Parse(content string) (*Schema, error)
+    Generate(schema *Schema) (string, error)
 }
 ```
 
-## Helper Functions
-
-### ValidateSQL
-
-Validates SQL text.
+### Parsing SQL
 
 ```go
-func ValidateSQL(sql string) error
+// Parse SQL content into a schema
+schema, err := parser.Parse(sqlContent)
+if err != nil {
+    log.Fatal(err)
+}
 ```
 
-**Parameters:**
-- `sql`: SQL text to validate
-
-**Return Values:**
-- `error`: In case of error
-
-### FormatSQL
-
-Formats SQL text.
+### Generating SQL
 
 ```go
-func FormatSQL(sql string) string
+// Generate SQL from a schema
+sql, err := parser.Generate(schema)
+if err != nil {
+    log.Fatal(err)
+}
 ```
 
-**Parameters:**
-- `sql`: SQL text to format
+## Schema API
 
-**Return Values:**
-- `string`: Formatted SQL text
+The Schema structure represents a complete database schema:
 
-## Error Types
+```go
+type Schema struct {
+    Name        string
+    Tables      []Table
+    Views       []View
+    Triggers    []Trigger
+    Sequences   []Sequence
+    Functions   []Function
+    Procedures  []Procedure
+    // ... other fields
+}
+```
+
+### Table Structure
+
+```go
+type Table struct {
+    Name        string
+    Schema      string
+    Columns     []Column
+    Indexes     []Index
+    Constraints []Constraint
+    Comment     string
+}
+```
+
+### Column Structure
+
+```go
+type Column struct {
+    Name          string
+    DataType      string
+    Length        int
+    Scale         int
+    IsNullable    bool
+    DefaultValue  string
+    AutoIncrement bool
+    IsPrimaryKey  bool
+    IsUnique      bool
+    Comment       string
+}
+```
+
+## Error Handling
+
+SQLMapper provides specific error types for different scenarios:
 
 ```go
 var (
-    ErrInvalidDialect    = errors.New("invalid database dialect")
-    ErrParseFailure      = errors.New("SQL parse error")
-    ErrConversionFailure = errors.New("conversion error")
-    ErrConnectionFailure = errors.New("connection error")
-    ErrMigrationFailure  = errors.New("migration error")
+    ErrEmptyContent     = errors.New("empty content")
+    ErrInvalidSQL       = errors.New("invalid SQL syntax")
+    ErrUnsupportedType  = errors.New("unsupported data type")
+    ErrParserNotFound   = errors.New("parser not found for database type")
 )
 ```
 
 ## Examples
 
-### Simple Conversion
+### Basic Usage
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/mstgnz/sqlmapper/mysql"
+    "github.com/mstgnz/sqlmapper/postgres"
+)
+
+func main() {
+    // MySQL input
+    mysqlSQL := `
+    CREATE TABLE users (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        email VARCHAR(255) UNIQUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );`
+
+    // Create parsers
+    mysqlParser := mysql.NewMySQL()
+    pgParser := postgres.NewPostgreSQL()
+
+    // Parse MySQL
+    schema, err := mysqlParser.Parse(mysqlSQL)
+    if err != nil {
+        panic(err)
+    }
+
+    // Generate PostgreSQL
+    pgSQL, err := pgParser.Generate(schema)
+    if err != nil {
+        panic(err)
+    }
+
+    fmt.Println(pgSQL)
+}
+```
+
+### CLI Usage
+
+```bash
+# Convert MySQL to PostgreSQL
+sqlmapper --file=dump.sql --to=postgres
+
+# Convert PostgreSQL to SQLite
+sqlmapper --file=schema.sql --to=sqlite
+```
+
+### Advanced Usage
 
 ```go
 package main
 
 import (
     "github.com/mstgnz/sqlmapper"
-    "log"
+    "github.com/mstgnz/sqlmapper/mysql"
 )
 
 func main() {
-    mysqlSQL := `CREATE TABLE users (
-        id INT PRIMARY KEY AUTO_INCREMENT,
-        name VARCHAR(100) NOT NULL
-    );`
-
-    // Convert from MySQL to PostgreSQL
-    pgSQL, err := sqlmapper.Convert(mysqlSQL, "mysql", "postgres")
-    if err != nil {
-        log.Fatal(err)
-    }
+    parser := mysql.NewMySQL()
     
-    log.Println(pgSQL)
+    // Parse complex schema
+    schema, err := parser.Parse(complexSQL)
+    if err != nil {
+        panic(err)
+    }
+
+    // Modify schema
+    for i, table := range schema.Tables {
+        // Add timestamps to all tables
+        schema.Tables[i].Columns = append(table.Columns,
+            sqlmapper.Column{
+                Name: "created_at",
+                DataType: "TIMESTAMP",
+                DefaultValue: "CURRENT_TIMESTAMP",
+            },
+            sqlmapper.Column{
+                Name: "updated_at",
+                DataType: "TIMESTAMP",
+                DefaultValue: "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
+            },
+        )
+    }
+
+    // Generate modified SQL
+    sql, err := parser.Generate(schema)
+    if err != nil {
+        panic(err)
+    }
 }
 ```
 
-### Migration Usage
+## Best Practices
 
-```go
-package main
+1. Always check for errors when parsing and generating SQL
+2. Use appropriate parsers for source and target databases
+3. Validate schema modifications before generating SQL
+4. Handle database-specific features carefully
+5. Test conversions with sample data
 
-import (
-    "context"
-    "github.com/mstgnz/sqlmapper/migration"
-    "log"
-)
+## Limitations
 
-func main() {
-    // Create migration manager
-    manager := migration.NewMigrationManager(db)
-
-    // Apply migrations
-    err := manager.Apply(context.Background())
-    if err != nil {
-        log.Fatal(err)
-    }
-}
+- Some database-specific features may not be perfectly converted
+- Complex stored procedures might need manual adjustment
+- Custom data types may require special handling
+- Performance may vary with large schemas
+</rewritten_file>

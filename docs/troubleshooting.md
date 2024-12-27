@@ -1,169 +1,151 @@
 # Troubleshooting Guide
 
-This guide helps you diagnose and fix common issues you might encounter while using SQLPorter.
-
-## Table of Contents
-
-1. [Common Issues](#common-issues)
-2. [Error Messages](#error-messages)
-3. [Performance Issues](#performance-issues)
-4. [Known Limitations](#known-limitations)
-5. [Database-Specific Issues](#database-specific-issues)
-6. [Security Issues](#security-issues)
-7. [Best Practices](#best-practices)
-
 ## Common Issues
 
-### Connection Issues
+### 1. Conversion Errors
 
-#### Problem: Unable to connect to database
-```
-error: failed to connect to database: connection refused
-```
-
-**Possible causes:**
-- Database server is not running
-- Incorrect connection credentials
-- Firewall blocking the connection
-- Wrong port number
-- SSL/TLS configuration issues
-
-**Solutions:**
-1. Verify database server is running
-2. Check connection credentials
-3. Check firewall settings
-4. Verify port number
-5. Check SSL/TLS certificates
-
-### Parsing Issues
-
-#### Problem: Invalid SQL syntax
-```
-error: failed to parse SQL: syntax error near 'TABLE'
-```
-
-**Possible causes:**
-- Unsupported SQL syntax
-- Malformed SQL statement
-- Incorrect database dialect selected
-- Character encoding issues
-
-**Solutions:**
-1. Verify SQL syntax is supported
-2. Check SQL statement format
-3. Ensure correct parser is being used
-4. Check character encoding
-
-### Migration Issues
-
-#### Problem: Migration fails to apply
-```
-error: failed to apply migration: table already exists
-```
-
-**Possible causes:**
-- Migration already applied
-- Conflicting table names
-- Insufficient permissions
-- Data inconsistency
-
-**Solutions:**
-1. Check migration status
-2. Verify table names
-3. Check database permissions
-4. Verify data integrity
-
-## Database-Specific Issues
-
-### MySQL Issues
-
-#### Problem: Character set mismatch
-```
-error: Incorrect string value: '\xF0\x9F\x98\x83' for column
-```
+#### Unsupported Data Types
+**Problem:** Some data types from the source database are not supported in the target database.
 
 **Solution:**
-1. Set database and table character set to UTF8MB4
-2. Add `charset=utf8mb4` to connection URL
+- Check the data type mapping table
+- Use alternative data types
+- Add custom conversion functions
 
-### PostgreSQL Issues
-
-#### Problem: SSL connection error
-```
-error: SSL is not enabled on the server
-```
+#### Syntax Errors
+**Problem:** SQL statements cannot be parsed or are invalid.
 
 **Solution:**
-1. Set `ssl = on` in postgresql.conf
-2. Place SSL certificates in correct location
+- Check SQL statement syntax
+- Verify database version compatibility
+- Simplify complex expressions
 
-## Security Issues
+### 2. Performance Issues
 
-### SSL/TLS Configuration
-
-#### Problem: Insecure connection
-```
-error: server does not support SSL, but SSL was required
-```
+#### Large Schema Conversions
+**Problem:** Converting large database schemas is slow.
 
 **Solution:**
-1. Configure SSL certificates
-2. Set SSL mode in connection string
-3. Verify certificate paths
+- Break schema into smaller parts
+- Remove unnecessary tables and fields
+- Optimize memory usage
 
-### Authorization Issues
-
-#### Problem: Insufficient permissions
-```
-error: permission denied for table users
-```
+#### Index Issues
+**Problem:** Indexes are not converting properly or causing performance issues.
 
 **Solution:**
-1. Adjust user permissions with GRANT commands
-2. Implement Role-based access control (RBAC)
+- Check index type compatibility
+- Remove unnecessary indexes
+- Optimize index creation order
+
+### 3. Data Integrity
+
+#### Foreign Key Constraints
+**Problem:** Foreign key constraints are not working properly.
+
+**Solution:**
+- Check referential integrity
+- Adjust table creation order
+- Temporarily disable constraints
+
+#### Character Set Issues
+**Problem:** Character encoding issues in text data.
+
+**Solution:**
+- Check character set and collation settings
+- Prefer UTF-8 usage
+- Escape special characters
+
+### 4. Database-Specific Issues
+
+#### MySQL to PostgreSQL
+**Problem:**
+- AUTO_INCREMENT behavior differs
+- ON UPDATE CURRENT_TIMESTAMP not supported
+- UNSIGNED data types not available
+
+**Solution:**
+- Use SERIAL or IDENTITY
+- Implement timestamp updates with triggers
+- Convert data types appropriately
+
+#### PostgreSQL to SQLite
+**Problem:**
+- Complex data types not supported
+- Schema changes are limited
+- Advanced index types not available
+
+**Solution:**
+- Convert to simple data types
+- Manage schema changes manually
+- Use alternative indexing strategies
+
+#### SQLite to Oracle
+**Problem:**
+- Auto-incrementing fields work differently
+- Data type incompatibilities
+- Trigger syntax differences
+
+**Solution:**
+- Use SEQUENCE and TRIGGER
+- Map data types to Oracle equivalents
+- Rewrite triggers
 
 ## Best Practices
 
-### 1. Migration Management
-- Break migrations into smaller chunks
-- Create rollback plan for each migration
-- Automate migration testing
+1. **Testing**
+   - Test with small dataset first
+   - Verify all CRUD operations
+   - Perform performance tests
 
-### 2. Performance Optimization
-- Use appropriate indexes
-- Partition large tables
-- Optimize queries
+2. **Backup**
+   - Take backup before conversion
+   - Use incremental backup strategy
+   - Prepare rollback plan
 
-### 3. Security
-- Encrypt sensitive data
-- Perform regular security audits
-- Maintain access logs
+3. **Documentation**
+   - Document changes
+   - Note known issues
+   - Share solutions
 
-### 4. Backup
-- Create regular backup schedule
-- Test backups
-- Store backups in different locations
+4. **Monitoring**
+   - Check error logs
+   - Monitor performance metrics
+   - Evaluate user feedback
 
-## Getting Help
+## Frequently Asked Questions
 
-If you encounter issues not covered in this guide:
+### General Questions
 
-1. Check the [GitHub Issues](https://github.com/mstgnz/sqlmapper/issues)
-2. Search the [Documentation](https://github.com/mstgnz/sqlmapper/docs)
-3. Create a new issue with:
-   - Error message
-   - Steps to reproduce
-   - Environment details
-   - Sample code
+**Q: Which database versions does SQLMapper support?**
+A: Supports latest stable versions. Check documentation for detailed version compatibility.
 
-## Version Migration Issues
+**Q: Will there be data loss during conversion?**
+A: Data loss can be prevented with proper configuration and testing. Always take backups.
 
-### Version Upgrade
-- Check changelog (CHANGELOG)
-- Test upgrade in staging environment
-- Backup before upgrade
+**Q: Is it suitable for large databases?**
+A: Yes, but may require chunked conversion and optimization.
 
-### Version Downgrade
-- Check backward compatibility
-- Review data structure changes
-- Review dependencies 
+### Technical Questions
+
+**Q: How are custom data types handled?**
+A: You can add custom conversion functions or use default mappings.
+
+**Q: Are triggers and stored procedures converted?**
+A: Simple triggers are converted automatically, complex ones require manual intervention.
+
+**Q: How are schema changes managed?**
+A: Change scripts are generated and applied in sequence.
+
+## Contact and Support
+
+- GitHub Issues: Bug reports and feature requests
+- Documentation: Detailed usage guides
+- Community: Discussion forums and contributions
+
+## Version History
+
+- v1.0.0: Initial stable release
+- v1.1.0: Performance improvements
+- v1.2.0: New database support
+- v1.3.0: Bug fixes and optimizations 

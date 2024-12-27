@@ -1,152 +1,157 @@
-# SQLite User Guide
+# SQLite Features and Usage
 
-## Contents
-- [Connection Configuration](#connection-configuration)
-- [Basic Usage](#basic-usage)
-- [Data Types](#data-types)
-- [SQLite Features](#sqlite-features)
-- [Example Scenarios](#example-scenarios)
+## Overview
+SQLMapper provides comprehensive support for converting SQLite database schemas to other database systems. This document outlines SQLite-specific features and usage examples.
 
-## Connection Configuration
+## Supported Features
 
-You can use the following configuration for SQLite connection:
+### Data Types
+SQLite's dynamic type system supports five basic data types:
+- `NULL`: Null value
+- `INTEGER`: Integer values
+- `REAL`: Floating point numbers
+- `TEXT`: Text values
+- `BLOB`: Binary data
 
-```go
-config := db.Config{
-    Driver:   "sqlite3",
-    Database: "mydb.sqlite",
-}
-```
+Note: Due to SQLite's "type flexibility" feature, data types from other database systems are converted to these five basic types.
 
-## Basic Usage
+### Table Features
+- Auto-incrementing fields (`AUTOINCREMENT`)
+- Table constraints
+- Temporary tables (`TEMPORARY TABLE`)
+- `WITHOUT ROWID` tables
+- Virtual tables (with FTS and R-Tree modules)
 
-To convert SQLite dump file:
+### Indexes
+- Unique indexes
+- Composite indexes
+- Partial indexes
+- Descending indexes
 
-```go
-// Create SQLite parser
-parser := sqlmapper.NewSQLiteParser()
+### Constraints
+- `NOT NULL`
+- `UNIQUE`
+- `PRIMARY KEY`
+- `FOREIGN KEY` (must be explicitly enabled)
+- `CHECK`
+- `DEFAULT` values
 
-// Parse SQLite dump
-entity, err := Parse(sqliteDump)
-if err != nil {
-    log.Error("Parse error", err)
-    return
-}
+## Usage Examples
 
-// Convert to PostgreSQL
-pgParser := sqlmapper.NewPostgresParser()
-pgSQL, err := pgParser.Convert(entity)
-if err != nil {
-    log.Error("Conversion error", err)
-    return
-}
-```
-
-## Data Types
-
-Data type mappings when converting from SQLite to other databases:
-
-| SQLite Data Type | MySQL | PostgreSQL | Oracle | SQL Server |
-|------------------|-------|------------|---------|------------|
-| INTEGER         | INT   | INTEGER    | NUMBER  | INT        |
-| REAL            | FLOAT | REAL       | NUMBER  | FLOAT      |
-| TEXT            | TEXT  | TEXT       | CLOB    | TEXT       |
-| BLOB            | BLOB  | BYTEA      | BLOB    | VARBINARY  |
-| NUMERIC         | DECIMAL| NUMERIC    | NUMBER  | DECIMAL    |
-
-## SQLite Features
-
-### Dynamic Type System
-
-SQLite's flexible type system:
+### Simple Table Creation
 ```sql
 CREATE TABLE users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT,  -- No need to specify length
-    data ANY    -- Can be any data type
+    name TEXT NOT NULL,
+    email TEXT UNIQUE,
+    created_at TEXT DEFAULT (datetime('now', 'localtime')),
+    active INTEGER DEFAULT 1 CHECK (active IN (0,1))
 );
 ```
 
-### AUTOINCREMENT
-
-Auto-incrementing fields in SQLite:
+### Related Tables
 ```sql
+-- Enable foreign key support
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE
+);
+
 CREATE TABLE products (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL
+    category_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    price REAL NOT NULL CHECK (price > 0),
+    stock INTEGER DEFAULT 0,
+    FOREIGN KEY (category_id) REFERENCES categories(id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE
 );
 ```
 
-### Limitations and Features
+### Index Usage
+```sql
+-- Unique index
+CREATE UNIQUE INDEX idx_user_email ON users(email);
 
-SQLite-specific limitations and features:
-- Maximum database size: 140 TB
-- Maximum number of tables: 2000000
-- Maximum row size: 1 GB
-- Single file-based database
-- No server required
-- Zero configuration
+-- Composite index
+CREATE INDEX idx_product_category ON products(category_id, name);
 
-## Example Scenarios
+-- Partial index
+CREATE INDEX idx_active_users ON users(id) WHERE active = 1;
 
-### 1. Simple Table Creation
-
-```go
-sqliteDump := `CREATE TABLE users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT NOT NULL UNIQUE,
-    email TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);`
-
-// Convert from SQLite to MySQL
-mysqlSQL, err := Convert(sqliteDump, "sqlite", "mysql")
+-- Descending index
+CREATE INDEX idx_product_price ON products(price DESC);
 ```
 
-### 2. Indexes
-
-```go
-sqliteDump := `
-CREATE TABLE orders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    total REAL NOT NULL,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-);
-CREATE INDEX idx_user_id ON orders(user_id);`
-
-// Convert from SQLite to PostgreSQL
-pgSQL, err := Convert(sqliteDump, "sqlite", "postgres")
+### View Creation
+```sql
+CREATE VIEW active_products AS
+SELECT p.*, c.name as category_name
+FROM products p
+JOIN categories c ON p.category_id = c.id
+WHERE p.stock > 0;
 ```
 
-### 3. Triggers
-
-```go
-sqliteDump := `
-CREATE TRIGGER update_timestamp 
-AFTER UPDATE ON users
+### Trigger Creation
+```sql
+CREATE TRIGGER tr_update_stock
+AFTER INSERT ON order_details
 BEGIN
-    UPDATE users SET updated_at = CURRENT_TIMESTAMP
-    WHERE id = NEW.id;
-END;`
-
-// Convert from SQLite to Oracle
-oracleSQL, err := Convert(sqliteDump, "sqlite", "oracle")
+    UPDATE products 
+    SET stock = stock - NEW.quantity 
+    WHERE id = NEW.product_id;
+END;
 ```
+
+### Virtual Table (FTS) Usage
+```sql
+-- Create FTS5 table
+CREATE VIRTUAL TABLE articles USING fts5(
+    title,
+    content,
+    tags
+);
+
+-- Search example
+SELECT * FROM articles 
+WHERE articles MATCH 'python AND programming';
+```
+
+## Conversion Notes
+
+### To MySQL
+- `INTEGER PRIMARY KEY AUTOINCREMENT` -> `INT AUTO_INCREMENT PRIMARY KEY`
+- `TEXT` -> Appropriate length `VARCHAR` or `TEXT`
+- `REAL` -> `DOUBLE`
+- SQLite triggers -> More comprehensive MySQL triggers
+
+### To PostgreSQL
+- `INTEGER PRIMARY KEY AUTOINCREMENT` -> `SERIAL PRIMARY KEY`
+- `TEXT` -> `TEXT` or `VARCHAR`
+- `REAL` -> `DOUBLE PRECISION`
+- SQLite indexes -> PostgreSQL's advanced index types
+
+### To Oracle
+- `INTEGER PRIMARY KEY AUTOINCREMENT` -> `NUMBER` + `SEQUENCE` + `TRIGGER`
+- `TEXT` -> `VARCHAR2` or `CLOB`
+- `REAL` -> `NUMBER`
+- SQLite views -> Oracle materialized views
 
 ## Best Practices
 
-### 1. Database Maintenance
-- Perform regular VACUUM operations
-- Optimize indexes
-- Regular backups
+1. Explicitly enable foreign key support
+2. Use indexes carefully (too many indexes can degrade performance in SQLite)
+3. Use separate tables for large BLOB data
+4. Make effective use of transactions
+5. Consider using WAL (Write-Ahead Logging) mode
 
-### 2. Performance Tips
-- Use appropriate indexes
-- Execute batch operations within transactions
-- Use WAL (Write-Ahead Logging) mode
+## Limitations
 
-### 3. Security
-- Set proper file permissions
-- Use encryption (with SQLCipher)
-- Implement input validation 
+- Data types are limited and simplified during conversion from other systems
+- Concurrent write operations are limited
+- Complex triggers and stored procedures are not supported
+- Table and column ALTER operations are limited
+- Some advanced database features are not available (partitioning, materialized views, etc.) 
