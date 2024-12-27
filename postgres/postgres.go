@@ -1,3 +1,5 @@
+// Package postgres provides functionality for parsing and generating PostgreSQL database schemas.
+// It implements the Parser interface for handling PostgreSQL specific SQL syntax and schema structures.
 package postgres
 
 import (
@@ -9,18 +11,40 @@ import (
 	"github.com/mstgnz/sqlmapper"
 )
 
+// PostgreSQL represents a PostgreSQL parser implementation that handles parsing and generating
+// PostgreSQL database schemas. It maintains an internal schema representation and provides
+// methods for converting between PostgreSQL SQL and the common schema format.
 type PostgreSQL struct {
 	schema *sqlmapper.Schema
 }
 
-// NewPostgreSQL creates a new PostgreSQL parser instance
+// NewPostgreSQL creates and initializes a new PostgreSQL parser instance.
+// It returns a parser that can handle PostgreSQL specific SQL syntax and schema structures.
 func NewPostgreSQL() *PostgreSQL {
 	return &PostgreSQL{
 		schema: &sqlmapper.Schema{},
 	}
 }
 
-// Parse parses PostgreSQL dump content
+// Parse takes a PostgreSQL SQL dump content and parses it into a common schema structure.
+// It processes various PostgreSQL objects including:
+// - Schemas and databases
+// - Custom types (ENUM, COMPOSITE)
+// - Extensions
+// - Sequences
+// - Tables with columns and constraints
+// - Indexes
+// - Views (regular and materialized)
+// - Functions and procedures
+// - Triggers
+// - Permissions (GRANT/REVOKE)
+//
+// Parameters:
+//   - content: The PostgreSQL SQL dump content to parse
+//
+// Returns:
+//   - *sqlmapper.Schema: The parsed schema structure
+//   - error: An error if parsing fails
 func (p *PostgreSQL) Parse(content string) (*sqlmapper.Schema, error) {
 	if content == "" {
 		return nil, errors.New("empty content")
@@ -73,7 +97,21 @@ func (p *PostgreSQL) Parse(content string) (*sqlmapper.Schema, error) {
 	return p.schema, nil
 }
 
-// Generate generates PostgreSQL dump from schema
+// Generate creates a PostgreSQL SQL dump from a schema structure.
+// It generates SQL statements for all database objects in the schema, including:
+// - Tables with columns and constraints
+// - Indexes
+// - Views
+// - Functions and procedures
+// - Triggers
+// - Permissions
+//
+// Parameters:
+//   - schema: The schema structure to convert to PostgreSQL SQL
+//
+// Returns:
+//   - string: The generated PostgreSQL SQL statements
+//   - error: An error if generation fails
 func (p *PostgreSQL) Generate(schema *sqlmapper.Schema) (string, error) {
 	if schema == nil {
 		return "", errors.New("empty schema")
@@ -139,8 +177,14 @@ func (p *PostgreSQL) Generate(schema *sqlmapper.Schema) (string, error) {
 	return result.String(), nil
 }
 
-// Helper functions for parsing
-
+// normalizeContent preprocesses the SQL content by removing comments and normalizing whitespace.
+// This helps ensure consistent parsing of the SQL statements.
+//
+// Parameters:
+//   - content: The SQL content to normalize
+//
+// Returns:
+//   - string: The normalized SQL content
 func (p *PostgreSQL) normalizeContent(content string) string {
 	// Remove comments
 	re := regexp.MustCompile(`--.*$`)
@@ -153,6 +197,14 @@ func (p *PostgreSQL) normalizeContent(content string) string {
 	return content
 }
 
+// parseSchemas extracts database and schema definitions from the SQL content.
+// It handles both CREATE DATABASE and CREATE SCHEMA statements.
+//
+// Parameters:
+//   - content: The SQL content to parse
+//
+// Returns:
+//   - error: An error if parsing fails
 func (p *PostgreSQL) parseSchemas(content string) error {
 	// Parse CREATE DATABASE
 	dbRe := regexp.MustCompile(`CREATE\s+DATABASE\s+(\w+)`)
@@ -175,6 +227,14 @@ func (p *PostgreSQL) parseSchemas(content string) error {
 	return nil
 }
 
+// parseTypes processes custom type definitions in the SQL content.
+// It handles both ENUM and COMPOSITE types, including their schema qualification.
+//
+// Parameters:
+//   - content: The SQL content to parse
+//
+// Returns:
+//   - error: An error if parsing fails
 func (p *PostgreSQL) parseTypes(content string) error {
 	// Parse ENUM types
 	enumRe := regexp.MustCompile(`CREATE\s+TYPE\s+([.\w]+)\s+AS\s+ENUM\s*\((.*?)\);`)
@@ -225,6 +285,14 @@ func (p *PostgreSQL) parseTypes(content string) error {
 	return nil
 }
 
+// parseExtensions extracts extension definitions from the SQL content.
+// It handles CREATE EXTENSION statements with optional schema qualification.
+//
+// Parameters:
+//   - content: The SQL content to parse
+//
+// Returns:
+//   - error: An error if parsing fails
 func (p *PostgreSQL) parseExtensions(content string) error {
 	re := regexp.MustCompile(`CREATE\s+EXTENSION(?:\s+IF\s+NOT\s+EXISTS)?\s+(?:"([^"]+)"|(\w+))(?:\s+WITH\s+SCHEMA\s+(\w+))?;`)
 	matches := re.FindAllStringSubmatch(content, -1)
@@ -247,6 +315,15 @@ func (p *PostgreSQL) parseExtensions(content string) error {
 	return nil
 }
 
+// parseSequences processes sequence definitions from the SQL content.
+// It handles all sequence options including INCREMENT, MINVALUE, MAXVALUE,
+// START WITH, CACHE, and CYCLE.
+//
+// Parameters:
+//   - content: The SQL content to parse
+//
+// Returns:
+//   - error: An error if parsing fails
 func (p *PostgreSQL) parseSequences(content string) error {
 	re := regexp.MustCompile(`CREATE\s+SEQUENCE\s+([.\w]+)(?:\s+INCREMENT\s+BY\s+(\d+))?(?:\s+MINVALUE\s+(\d+))?(?:\s+MAXVALUE\s+(\d+))?(?:\s+START\s+WITH\s+(\d+))?(?:\s+CACHE\s+(\d+))?(?:\s+CYCLE)?;`)
 	matches := re.FindAllStringSubmatch(content, -1)
@@ -292,6 +369,15 @@ func (p *PostgreSQL) parseSequences(content string) error {
 	return nil
 }
 
+// parseTables extracts table definitions from the SQL content.
+// It processes table structure including columns, constraints, tablespaces,
+// and comments for both tables and columns.
+//
+// Parameters:
+//   - content: The SQL content to parse
+//
+// Returns:
+//   - error: An error if parsing fails
 func (p *PostgreSQL) parseTables(content string) error {
 	re := regexp.MustCompile(`CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([.\w]+)\s*\((.*?)\)(?:\s+TABLESPACE\s+(\w+))?;`)
 	matches := re.FindAllStringSubmatch(content, -1)
@@ -356,6 +442,15 @@ func (p *PostgreSQL) parseTables(content string) error {
 	return nil
 }
 
+// parseColumnsAndConstraints processes column and constraint definitions within a table.
+// It handles various column attributes and both inline and table-level constraints.
+//
+// Parameters:
+//   - columnDefs: The column definitions string to parse
+//   - table: The table structure to populate
+//
+// Returns:
+//   - error: An error if parsing fails
 func (p *PostgreSQL) parseColumnsAndConstraints(columnDefs string, table *sqlmapper.Table) error {
 	// Split column definitions
 	defs := strings.Split(columnDefs, ",")
@@ -441,6 +536,16 @@ func (p *PostgreSQL) parseColumnsAndConstraints(columnDefs string, table *sqlmap
 	return nil
 }
 
+// parseColumn processes a single column definition.
+// It handles various column attributes including data type, length/precision,
+// nullability, defaults, and inline constraints.
+//
+// Parameters:
+//   - def: The column definition string to parse
+//
+// Returns:
+//   - sqlmapper.Column: The parsed column structure
+//   - error: An error if parsing fails
 func (p *PostgreSQL) parseColumn(def string) (sqlmapper.Column, error) {
 	parts := strings.Fields(def)
 	if len(parts) < 2 {
@@ -518,6 +623,16 @@ func (p *PostgreSQL) parseColumn(def string) (sqlmapper.Column, error) {
 	return column, nil
 }
 
+// parseConstraint processes a table constraint definition.
+// It handles various constraint types including PRIMARY KEY, FOREIGN KEY,
+// UNIQUE, and CHECK constraints.
+//
+// Parameters:
+//   - def: The constraint definition string to parse
+//
+// Returns:
+//   - sqlmapper.Constraint: The parsed constraint structure
+//   - error: An error if parsing fails
 func (p *PostgreSQL) parseConstraint(def string) (sqlmapper.Constraint, error) {
 	constraint := sqlmapper.Constraint{}
 
@@ -580,6 +695,14 @@ func (p *PostgreSQL) parseConstraint(def string) (sqlmapper.Constraint, error) {
 	return constraint, nil
 }
 
+// parseIndexes extracts index definitions from the SQL content.
+// It handles both regular and unique indexes, associating them with their tables.
+//
+// Parameters:
+//   - content: The SQL content to parse
+//
+// Returns:
+//   - error: An error if parsing fails
 func (p *PostgreSQL) parseIndexes(content string) error {
 	re := regexp.MustCompile(`CREATE\s+(?:UNIQUE\s+)?INDEX\s+(\w+)\s+ON\s+([.\w]+)\s*\((.*?)\)`)
 	matches := re.FindAllStringSubmatch(content, -1)
@@ -614,6 +737,14 @@ func (p *PostgreSQL) parseIndexes(content string) error {
 	return nil
 }
 
+// parseViews processes view definitions from the SQL content.
+// It handles both regular and materialized views with their definitions.
+//
+// Parameters:
+//   - content: The SQL content to parse
+//
+// Returns:
+//   - error: An error if parsing fails
 func (p *PostgreSQL) parseViews(content string) error {
 	// Parse regular views
 	viewRe := regexp.MustCompile(`CREATE(?:\s+OR\s+REPLACE)?\s+VIEW\s+([.\w]+)\s+AS\s+(.*?);`)
@@ -667,6 +798,15 @@ func (p *PostgreSQL) parseViews(content string) error {
 	return nil
 }
 
+// parseFunctions extracts function and procedure definitions from the SQL content.
+// It handles various function attributes including parameters, return types,
+// and function bodies.
+//
+// Parameters:
+//   - content: The SQL content to parse
+//
+// Returns:
+//   - error: An error if parsing fails
 func (p *PostgreSQL) parseFunctions(content string) error {
 	// Parse functions
 	funcRe := regexp.MustCompile(`CREATE(?:\s+OR\s+REPLACE)?\s+FUNCTION\s+([.\w]+)\s*\((.*?)\)\s+RETURNS\s+(\w+)\s+AS\s+\$\$(.*?)\$\$\s+LANGUAGE\s+(\w+)`)
@@ -752,6 +892,15 @@ func (p *PostgreSQL) parseFunctions(content string) error {
 	return nil
 }
 
+// parseTriggers processes trigger definitions from the SQL content.
+// It handles both regular and conditional triggers with their timing,
+// events, and conditions.
+//
+// Parameters:
+//   - content: The SQL content to parse
+//
+// Returns:
+//   - error: An error if parsing fails
 func (p *PostgreSQL) parseTriggers(content string) error {
 	// Parse regular triggers
 	triggerRe := regexp.MustCompile(`CREATE\s+TRIGGER\s+(\w+)\s+(BEFORE|AFTER|INSTEAD\s+OF)\s+(INSERT|UPDATE|DELETE)\s+ON\s+([.\w]+)\s+(?:FOR\s+EACH\s+ROW\s+)?EXECUTE\s+(?:FUNCTION|PROCEDURE)\s+([.\w]+)`)
@@ -808,6 +957,14 @@ func (p *PostgreSQL) parseTriggers(content string) error {
 	return nil
 }
 
+// parsePermissions extracts permission definitions from the SQL content.
+// It handles GRANT and REVOKE statements for various privilege types.
+//
+// Parameters:
+//   - content: The SQL content to parse
+//
+// Returns:
+//   - error: An error if parsing fails
 func (p *PostgreSQL) parsePermissions(content string) error {
 	// Parse GRANT statements
 	grantRe := regexp.MustCompile(`GRANT\s+(.*?)\s+ON\s+(?:TABLE\s+)?([.\w]+)\s+TO\s+(\w+)(?:\s+WITH\s+GRANT\s+OPTION)?;`)
@@ -887,184 +1044,4 @@ func (p *PostgreSQL) parsePermissions(content string) error {
 	}
 
 	return nil
-}
-
-// Helper functions for generating SQL
-
-func (p *PostgreSQL) generateTableSQL(table sqlmapper.Table) string {
-	var result strings.Builder
-
-	// Table name with schema
-	tableName := table.Name
-	if table.Schema != "" {
-		tableName = fmt.Sprintf("%s.%s", table.Schema, table.Name)
-	}
-
-	result.WriteString(fmt.Sprintf("CREATE TABLE %s (\n", tableName))
-
-	// Columns
-	for i, column := range table.Columns {
-		result.WriteString("    " + p.generateColumnSQL(column))
-		if i < len(table.Columns)-1 || len(table.Constraints) > 0 {
-			result.WriteString(",")
-		}
-		result.WriteString("\n")
-	}
-
-	// Constraints
-	for i, constraint := range table.Constraints {
-		result.WriteString("    " + p.generateConstraintSQL(constraint))
-		if i < len(table.Constraints)-1 {
-			result.WriteString(",")
-		}
-		result.WriteString("\n")
-	}
-
-	result.WriteString(");")
-	return result.String()
-}
-
-func (p *PostgreSQL) generateColumnSQL(column sqlmapper.Column) string {
-	var parts []string
-	parts = append(parts, column.Name)
-
-	// Handle SERIAL type
-	if column.AutoIncrement {
-		if column.IsPrimaryKey {
-			parts = append(parts, "SERIAL PRIMARY KEY")
-		} else {
-			parts = append(parts, "SERIAL")
-		}
-	} else {
-		// Data type with length/precision
-		if column.Length > 0 {
-			if column.Scale > 0 {
-				parts = append(parts, fmt.Sprintf("%s(%d,%d)", column.DataType, column.Length, column.Scale))
-			} else {
-				parts = append(parts, fmt.Sprintf("%s(%d)", column.DataType, column.Length))
-			}
-		} else {
-			parts = append(parts, column.DataType)
-		}
-
-		if !column.IsNullable {
-			parts = append(parts, "NOT NULL")
-		}
-	}
-
-	if column.DefaultValue != "" && !column.AutoIncrement {
-		if strings.Contains(column.DefaultValue, " ") ||
-			strings.ToUpper(column.DefaultValue) == "CURRENT_TIMESTAMP" ||
-			strings.HasPrefix(column.DefaultValue, "nextval") {
-			parts = append(parts, "DEFAULT", column.DefaultValue)
-		} else {
-			parts = append(parts, "DEFAULT", fmt.Sprintf("'%s'", column.DefaultValue))
-		}
-	}
-
-	if column.IsUnique && !column.IsPrimaryKey {
-		parts = append(parts, "UNIQUE")
-	}
-
-	return strings.Join(parts, " ")
-}
-
-func (p *PostgreSQL) generateConstraintSQL(constraint sqlmapper.Constraint) string {
-	var result strings.Builder
-
-	if constraint.Name != "" {
-		result.WriteString(fmt.Sprintf("CONSTRAINT %s ", constraint.Name))
-	}
-
-	switch constraint.Type {
-	case "PRIMARY KEY":
-		result.WriteString(fmt.Sprintf("PRIMARY KEY (%s)", strings.Join(constraint.Columns, ", ")))
-	case "FOREIGN KEY":
-		result.WriteString(fmt.Sprintf("FOREIGN KEY (%s) REFERENCES %s (%s)",
-			strings.Join(constraint.Columns, ", "),
-			constraint.RefTable,
-			strings.Join(constraint.RefColumns, ", ")))
-		if constraint.DeleteRule != "" {
-			result.WriteString(" ON DELETE " + constraint.DeleteRule)
-		}
-	case "UNIQUE":
-		result.WriteString(fmt.Sprintf("UNIQUE (%s)", strings.Join(constraint.Columns, ", ")))
-	case "CHECK":
-		result.WriteString(fmt.Sprintf("CHECK (%s)", constraint.CheckExpression))
-	}
-
-	return result.String()
-}
-
-func (p *PostgreSQL) generateIndexSQL(tableName string, index sqlmapper.Index) string {
-	var result strings.Builder
-
-	if index.IsUnique {
-		result.WriteString("CREATE UNIQUE INDEX ")
-	} else {
-		result.WriteString("CREATE INDEX ")
-	}
-
-	result.WriteString(fmt.Sprintf("%s ON %s(%s);",
-		index.Name,
-		tableName,
-		strings.Join(index.Columns, ", ")))
-
-	return result.String()
-}
-
-func (p *PostgreSQL) generateViewSQL(view sqlmapper.View) string {
-	viewName := view.Name
-	if view.Schema != "" {
-		viewName = fmt.Sprintf("%s.%s", view.Schema, view.Name)
-	}
-
-	return fmt.Sprintf("CREATE OR REPLACE VIEW %s AS\n%s;",
-		viewName,
-		view.Definition)
-}
-
-func (p *PostgreSQL) generateFunctionSQL(function sqlmapper.Function) string {
-	var result strings.Builder
-
-	functionName := function.Name
-	if function.Schema != "" {
-		functionName = fmt.Sprintf("%s.%s", function.Schema, function.Name)
-	}
-
-	result.WriteString(fmt.Sprintf("CREATE OR REPLACE FUNCTION %s(", functionName))
-
-	// Parameters
-	var params []string
-	for _, param := range function.Parameters {
-		params = append(params, fmt.Sprintf("%s %s", param.Name, param.DataType))
-	}
-	result.WriteString(strings.Join(params, ", "))
-
-	result.WriteString(fmt.Sprintf(")\nRETURNS %s AS $$\n%s\n$$ LANGUAGE %s;",
-		function.Returns,
-		function.Body,
-		function.Language))
-
-	return result.String()
-}
-
-func (p *PostgreSQL) generateTriggerSQL(trigger sqlmapper.Trigger) string {
-	tableName := trigger.Table
-	if trigger.Schema != "" {
-		tableName = fmt.Sprintf("%s.%s", trigger.Schema, trigger.Table)
-	}
-
-	forEachRow := ""
-	if trigger.ForEachRow {
-		forEachRow = "FOR EACH ROW"
-	}
-
-	return fmt.Sprintf("CREATE TRIGGER %s\n%s %s ON %s\n%s EXECUTE FUNCTION %s();",
-		trigger.Name,
-		trigger.Timing,
-		trigger.Event,
-		tableName,
-		forEachRow,
-		trigger.Body)
 }
