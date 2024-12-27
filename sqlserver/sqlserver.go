@@ -3,9 +3,9 @@
 package sqlserver
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/mstgnz/sqlmapper"
@@ -16,6 +16,7 @@ import (
 // methods for converting between SQL Server SQL and the common schema format.
 type SQLServer struct {
 	schema *sqlmapper.Schema
+	buf    *bytes.Buffer // Buffer for parsing operations
 }
 
 // NewSQLServer creates and initializes a new SQL Server parser instance.
@@ -23,6 +24,7 @@ type SQLServer struct {
 func NewSQLServer() *SQLServer {
 	return &SQLServer{
 		schema: &sqlmapper.Schema{},
+		buf:    bytes.NewBuffer(nil),
 	}
 }
 
@@ -45,43 +47,46 @@ func (s *SQLServer) Parse(content string) (*sqlmapper.Schema, error) {
 		return nil, errors.New("empty content")
 	}
 
+	// Convert content to bytes
+	contentBytes := []byte(content)
+
 	// Split content into statements
-	statements := s.splitStatements(content)
+	statements := s.splitStatements(contentBytes)
 
 	for _, stmt := range statements {
-		stmt = strings.TrimSpace(stmt)
-		if stmt == "" {
+		stmt = bytes.TrimSpace(stmt)
+		if len(stmt) == 0 {
 			continue
 		}
 
-		upperStmt := strings.ToUpper(stmt)
+		upperStmt := bytes.ToUpper(stmt)
 
 		switch {
-		case strings.HasPrefix(upperStmt, "CREATE TABLE"):
+		case bytes.HasPrefix(upperStmt, []byte("CREATE TABLE")):
 			table, err := s.parseCreateTable(stmt)
 			if err != nil {
 				return nil, fmt.Errorf("error parsing CREATE TABLE: %v", err)
 			}
 			s.schema.Tables = append(s.schema.Tables, table)
 
-		case strings.HasPrefix(upperStmt, "CREATE INDEX") || strings.HasPrefix(upperStmt, "CREATE UNIQUE INDEX"):
+		case bytes.HasPrefix(upperStmt, []byte("CREATE INDEX")) || bytes.HasPrefix(upperStmt, []byte("CREATE UNIQUE INDEX")):
 			if err := s.parseCreateIndex(stmt); err != nil {
 				return nil, fmt.Errorf("error parsing CREATE INDEX: %v", err)
 			}
 
-		case strings.HasPrefix(upperStmt, "ALTER TABLE"):
+		case bytes.HasPrefix(upperStmt, []byte("ALTER TABLE")):
 			if err := s.parseAlterTable(stmt); err != nil {
 				return nil, fmt.Errorf("error parsing ALTER TABLE: %v", err)
 			}
 
-		case strings.HasPrefix(upperStmt, "CREATE VIEW"):
+		case bytes.HasPrefix(upperStmt, []byte("CREATE VIEW")):
 			view, err := s.parseCreateView(stmt)
 			if err != nil {
 				return nil, fmt.Errorf("error parsing CREATE VIEW: %v", err)
 			}
 			s.schema.Views = append(s.schema.Views, view)
 
-		case strings.HasPrefix(upperStmt, "CREATE TRIGGER"):
+		case bytes.HasPrefix(upperStmt, []byte("CREATE TRIGGER")):
 			trigger, err := s.parseCreateTrigger(stmt)
 			if err != nil {
 				return nil, fmt.Errorf("error parsing CREATE TRIGGER: %v", err)
@@ -95,82 +100,69 @@ func (s *SQLServer) Parse(content string) (*sqlmapper.Schema, error) {
 
 // splitStatements splits the SQL content into individual statements.
 // It handles both semicolon and GO statement terminators.
-func (s *SQLServer) splitStatements(content string) []string {
-	var statements []string
-	var currentStmt strings.Builder
+func (s *SQLServer) splitStatements(content []byte) [][]byte {
+	var statements [][]byte
+	s.buf.Reset()
 
-	lines := strings.Split(content, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "--") {
+	// First split by GO statements
+	goBlocks := bytes.Split(content, []byte("GO"))
+
+	for _, block := range goBlocks {
+		block = bytes.TrimSpace(block)
+		if len(block) == 0 {
 			continue
 		}
 
-		if strings.EqualFold(line, "GO") {
-			if currentStmt.Len() > 0 {
-				statements = append(statements, strings.TrimSpace(currentStmt.String()))
-				currentStmt.Reset()
+		// Then split each GO block by semicolons
+		stmts := bytes.Split(block, []byte(";"))
+		for _, stmt := range stmts {
+			stmt = bytes.TrimSpace(stmt)
+			if len(stmt) == 0 || bytes.HasPrefix(stmt, []byte("--")) {
+				continue
 			}
-			continue
+			statements = append(statements, stmt)
 		}
-
-		if strings.Contains(line, ";") {
-			parts := strings.Split(line, ";")
-			for i, part := range parts {
-				if i < len(parts)-1 {
-					currentStmt.WriteString(part)
-					if currentStmt.Len() > 0 {
-						statements = append(statements, strings.TrimSpace(currentStmt.String()))
-						currentStmt.Reset()
-					}
-				} else if part != "" {
-					if currentStmt.Len() > 0 {
-						currentStmt.WriteString(" ")
-					}
-					currentStmt.WriteString(part)
-				}
-			}
-		} else {
-			if currentStmt.Len() > 0 {
-				currentStmt.WriteString(" ")
-			}
-			currentStmt.WriteString(line)
-		}
-	}
-
-	if currentStmt.Len() > 0 {
-		statements = append(statements, strings.TrimSpace(currentStmt.String()))
 	}
 
 	return statements
 }
 
 // parseCreateTable parses a CREATE TABLE statement and returns a Table structure.
-func (s *SQLServer) parseCreateTable(stmt string) (sqlmapper.Table, error) {
+func (s *SQLServer) parseCreateTable(stmt []byte) (sqlmapper.Table, error) {
 	table := sqlmapper.Table{}
 
-	// Extract table name
-	tableNameRegex := regexp.MustCompile(`CREATE\s+TABLE\s+(?:\[?dbo\]?\.)?\[?(\w+)\]?`)
-	matches := tableNameRegex.FindStringSubmatch(stmt)
-	if len(matches) > 1 {
-		table.Name = matches[1]
+	// Extract table name using bytes.Index and bytes.LastIndex
+	startIdx := bytes.Index(stmt, []byte("TABLE")) + 5
+	endIdx := bytes.Index(stmt[startIdx:], []byte("("))
+	if endIdx == -1 {
+		return table, fmt.Errorf("invalid CREATE TABLE statement")
 	}
+	tableName := bytes.TrimSpace(stmt[startIdx : startIdx+endIdx])
+
+	// Remove schema prefix if exists
+	if idx := bytes.LastIndex(tableName, []byte(".")); idx != -1 {
+		tableName = tableName[idx+1:]
+	}
+	// Remove brackets if exists
+	tableName = bytes.Trim(tableName, "[]")
+	table.Name = string(tableName)
 
 	// Extract column definitions
-	columnsStr := stmt[strings.Index(stmt, "(")+1 : strings.LastIndex(stmt, ")")]
-	columnDefs := strings.Split(columnsStr, ",")
+	columnsBytes := stmt[startIdx+endIdx+1 : bytes.LastIndex(stmt, []byte(")"))]
+	columnDefs := bytes.Split(columnsBytes, []byte(","))
 
 	for _, colDef := range columnDefs {
-		colDef = strings.TrimSpace(colDef)
-		if colDef == "" {
+		colDef = bytes.TrimSpace(colDef)
+		if len(colDef) == 0 {
 			continue
 		}
 
 		// Handle table constraints
-		if strings.HasPrefix(strings.ToUpper(colDef), "CONSTRAINT") ||
-			strings.HasPrefix(strings.ToUpper(colDef), "PRIMARY KEY") ||
-			strings.HasPrefix(strings.ToUpper(colDef), "FOREIGN KEY") ||
-			strings.HasPrefix(strings.ToUpper(colDef), "UNIQUE") {
+		upperColDef := bytes.ToUpper(colDef)
+		if bytes.HasPrefix(upperColDef, []byte("CONSTRAINT")) ||
+			bytes.HasPrefix(upperColDef, []byte("PRIMARY KEY")) ||
+			bytes.HasPrefix(upperColDef, []byte("FOREIGN KEY")) ||
+			bytes.HasPrefix(upperColDef, []byte("UNIQUE")) {
 			constraint := s.parseConstraint(colDef)
 			table.Constraints = append(table.Constraints, constraint)
 			continue
@@ -185,278 +177,152 @@ func (s *SQLServer) parseCreateTable(stmt string) (sqlmapper.Table, error) {
 }
 
 // parseColumn parses a column definition and returns a Column structure.
-func (s *SQLServer) parseColumn(def string) sqlmapper.Column {
-	parts := strings.Fields(def)
+func (s *SQLServer) parseColumn(def []byte) sqlmapper.Column {
+	parts := bytes.Fields(def)
 	if len(parts) < 2 {
 		return sqlmapper.Column{}
 	}
 
 	column := sqlmapper.Column{
-		Name:       strings.Trim(parts[0], "[]"),
-		DataType:   strings.ToUpper(parts[1]),
+		Name:       string(bytes.Trim(parts[0], "[]")),
+		DataType:   string(bytes.ToUpper(parts[1])),
 		IsNullable: true, // SQL Server columns are nullable by default
 	}
 
 	// Parse length/precision
-	if strings.Contains(column.DataType, "(") {
-		re := regexp.MustCompile(`(\w+)\((\d+)(?:,(\d+))?\)`)
-		if matches := re.FindStringSubmatch(column.DataType); len(matches) > 2 {
-			column.DataType = matches[1]
-			fmt.Sscanf(matches[2], "%d", &column.Length)
-			if len(matches) > 3 && matches[3] != "" {
-				fmt.Sscanf(matches[3], "%d", &column.Scale)
+	if bytes.Contains(parts[1], []byte("(")) {
+		startIdx := bytes.Index(parts[1], []byte("("))
+		endIdx := bytes.Index(parts[1], []byte(")"))
+		if startIdx != -1 && endIdx != -1 {
+			column.DataType = string(parts[1][:startIdx])
+			sizeStr := string(parts[1][startIdx+1 : endIdx])
+			sizes := strings.Split(sizeStr, ",")
+			if len(sizes) > 0 {
+				fmt.Sscanf(sizes[0], "%d", &column.Length)
+				if len(sizes) > 1 {
+					fmt.Sscanf(sizes[1], "%d", &column.Scale)
+				}
 			}
 		}
 	}
 
-	def = strings.ToUpper(def)
+	upperDef := bytes.ToUpper(def)
 
 	// Handle PRIMARY KEY
-	if strings.Contains(def, "PRIMARY KEY") {
+	if bytes.Contains(upperDef, []byte("PRIMARY KEY")) {
 		column.IsPrimaryKey = true
 		column.IsNullable = false
 	}
 
 	// Handle NOT NULL
-	if strings.Contains(def, "NOT NULL") {
+	if bytes.Contains(upperDef, []byte("NOT NULL")) {
 		column.IsNullable = false
 	}
 
 	// Handle UNIQUE
-	if strings.Contains(def, "UNIQUE") {
+	if bytes.Contains(upperDef, []byte("UNIQUE")) {
 		column.IsUnique = true
 	}
 
 	// Handle IDENTITY
-	if strings.Contains(def, "IDENTITY") {
+	if bytes.Contains(upperDef, []byte("IDENTITY")) {
 		column.AutoIncrement = true
 	}
 
 	// Handle DEFAULT
-	if idx := strings.Index(def, "DEFAULT"); idx != -1 {
-		restDef := def[idx+7:]
-		endIdx := strings.IndexAny(restDef, " ,")
+	if idx := bytes.Index(upperDef, []byte("DEFAULT")); idx != -1 {
+		restDef := upperDef[idx+7:]
+		endIdx := bytes.IndexAny(restDef, " ,")
 		if endIdx == -1 {
 			endIdx = len(restDef)
 		}
-		column.DefaultValue = strings.Trim(restDef[:endIdx], "'()")
+		column.DefaultValue = string(bytes.Trim(restDef[:endIdx], "'()"))
 	}
 
 	return column
 }
 
 // parseConstraint parses a table constraint definition and returns a Constraint structure.
-func (s *SQLServer) parseConstraint(def string) sqlmapper.Constraint {
+func (s *SQLServer) parseConstraint(def []byte) sqlmapper.Constraint {
 	constraint := sqlmapper.Constraint{}
-	def = strings.TrimSpace(def)
+	def = bytes.TrimSpace(def)
 
 	// Extract constraint name if exists
-	if strings.HasPrefix(strings.ToUpper(def), "CONSTRAINT") {
-		parts := strings.Fields(def)
+	if bytes.HasPrefix(bytes.ToUpper(def), []byte("CONSTRAINT")) {
+		parts := bytes.Fields(def)
 		if len(parts) > 1 {
-			constraint.Name = strings.Trim(parts[1], "[]")
-			def = strings.Join(parts[2:], " ")
+			constraint.Name = string(bytes.Trim(parts[1], "[]"))
+			def = bytes.Join(parts[2:], []byte(" "))
 		}
 	}
 
+	upperDef := bytes.ToUpper(def)
 	switch {
-	case strings.Contains(strings.ToUpper(def), "PRIMARY KEY"):
+	case bytes.Contains(upperDef, []byte("PRIMARY KEY")):
 		constraint.Type = "PRIMARY KEY"
-		columns := s.extractColumns(def, "PRIMARY KEY")
-		constraint.Columns = columns
+		constraint.Columns = s.extractColumns(def, "PRIMARY KEY")
 
-	case strings.Contains(strings.ToUpper(def), "FOREIGN KEY"):
+	case bytes.Contains(upperDef, []byte("FOREIGN KEY")):
 		constraint.Type = "FOREIGN KEY"
-		columns := s.extractColumns(def, "FOREIGN KEY")
-		constraint.Columns = columns
+		constraint.Columns = s.extractColumns(def, "FOREIGN KEY")
 
 		// Extract referenced table and columns
-		refRegex := regexp.MustCompile(`REFERENCES\s+(?:\[?dbo\]?\.)?\[?(\w+)\]?\s*\((.*?)\)`)
-		if matches := refRegex.FindStringSubmatch(def); len(matches) > 2 {
-			constraint.RefTable = matches[1]
-			constraint.RefColumns = s.splitAndTrim(matches[2])
+		if idx := bytes.Index(upperDef, []byte("REFERENCES")); idx != -1 {
+			refPart := def[idx:]
+			startIdx := bytes.Index(refPart, []byte("("))
+			endIdx := bytes.Index(refPart, []byte(")"))
+			if startIdx != -1 && endIdx != -1 {
+				tableName := bytes.TrimSpace(refPart[9:startIdx])
+				// Remove schema prefix and brackets
+				if idx := bytes.LastIndex(tableName, []byte(".")); idx != -1 {
+					tableName = tableName[idx+1:]
+				}
+				tableName = bytes.Trim(tableName, "[]")
+				constraint.RefTable = string(tableName)
+
+				colStr := string(refPart[startIdx+1 : endIdx])
+				constraint.RefColumns = s.splitAndTrim(colStr)
+			}
 		}
 
 		// Extract ON DELETE rule
-		if strings.Contains(strings.ToUpper(def), "ON DELETE CASCADE") {
+		if bytes.Contains(upperDef, []byte("ON DELETE CASCADE")) {
 			constraint.DeleteRule = "CASCADE"
 		}
 
-	case strings.Contains(strings.ToUpper(def), "UNIQUE"):
+	case bytes.Contains(upperDef, []byte("UNIQUE")):
 		constraint.Type = "UNIQUE"
-		columns := s.extractColumns(def, "UNIQUE")
-		constraint.Columns = columns
+		constraint.Columns = s.extractColumns(def, "UNIQUE")
 
-	case strings.Contains(strings.ToUpper(def), "CHECK"):
+	case bytes.Contains(upperDef, []byte("CHECK")):
 		constraint.Type = "CHECK"
-		checkRegex := regexp.MustCompile(`CHECK\s*\((.*?)\)`)
-		if matches := checkRegex.FindStringSubmatch(def); len(matches) > 1 {
-			constraint.CheckExpression = matches[1]
+		if idx := bytes.Index(upperDef, []byte("CHECK")); idx != -1 {
+			startIdx := bytes.Index(def[idx:], []byte("("))
+			endIdx := bytes.LastIndex(def, []byte(")"))
+			if startIdx != -1 && endIdx != -1 {
+				constraint.CheckExpression = string(bytes.TrimSpace(def[idx+startIdx+1 : endIdx]))
+			}
 		}
 	}
 
 	return constraint
 }
 
-// parseCreateIndex parses a CREATE INDEX statement and adds the index to the appropriate table.
-func (s *SQLServer) parseCreateIndex(stmt string) error {
-	isUnique := strings.HasPrefix(strings.ToUpper(stmt), "CREATE UNIQUE")
+// extractColumns extracts column names from a constraint definition.
+func (s *SQLServer) extractColumns(def []byte, afterKeyword string) []string {
+	upperDef := bytes.ToUpper(def)
+	keyword := []byte(afterKeyword)
 
-	// Extract index name and table name
-	var indexRegex *regexp.Regexp
-	if isUnique {
-		indexRegex = regexp.MustCompile(`CREATE\s+UNIQUE\s+INDEX\s+\[?(\w+)\]?\s+ON\s+(?:\[?dbo\]?\.)?\[?(\w+)\]?`)
-	} else {
-		indexRegex = regexp.MustCompile(`CREATE\s+INDEX\s+\[?(\w+)\]?\s+ON\s+(?:\[?dbo\]?\.)?\[?(\w+)\]?`)
-	}
-
-	matches := indexRegex.FindStringSubmatch(stmt)
-	if len(matches) < 3 {
-		return fmt.Errorf("invalid CREATE INDEX statement: %s", stmt)
-	}
-
-	indexName := matches[1]
-	tableName := matches[2]
-
-	// Extract columns
-	columnsRegex := regexp.MustCompile(`\((.*?)\)`)
-	columnMatches := columnsRegex.FindStringSubmatch(stmt)
-	if len(columnMatches) < 2 {
-		return fmt.Errorf("no columns found in CREATE INDEX statement: %s", stmt)
-	}
-
-	columns := s.splitAndTrim(columnMatches[1])
-
-	// Find the table and add the index
-	for i, table := range s.schema.Tables {
-		if table.Name == tableName {
-			s.schema.Tables[i].Indexes = append(s.schema.Tables[i].Indexes, sqlmapper.Index{
-				Name:     indexName,
-				Columns:  columns,
-				IsUnique: isUnique,
-			})
-			return nil
+	if idx := bytes.Index(upperDef, keyword); idx != -1 {
+		rest := def[idx+len(keyword):]
+		startIdx := bytes.Index(rest, []byte("("))
+		endIdx := bytes.Index(rest, []byte(")"))
+		if startIdx != -1 && endIdx != -1 {
+			colStr := string(rest[startIdx+1 : endIdx])
+			return s.splitAndTrim(colStr)
 		}
 	}
-
-	return fmt.Errorf("table not found for index: %s", tableName)
-}
-
-// parseAlterTable parses an ALTER TABLE statement and modifies the appropriate table.
-func (s *SQLServer) parseAlterTable(stmt string) error {
-	// Extract table name
-	tableNameRegex := regexp.MustCompile(`ALTER\s+TABLE\s+(?:\[?dbo\]?\.)?\[?(\w+)\]?`)
-	matches := tableNameRegex.FindStringSubmatch(stmt)
-	if len(matches) < 2 {
-		return fmt.Errorf("invalid ALTER TABLE statement: %s", stmt)
-	}
-
-	tableName := matches[1]
-
-	// Find the table
-	var tableIndex = -1
-	for i, table := range s.schema.Tables {
-		if table.Name == tableName {
-			tableIndex = i
-			break
-		}
-	}
-
-	if tableIndex == -1 {
-		// Create new table if it doesn't exist
-		s.schema.Tables = append(s.schema.Tables, sqlmapper.Table{Name: tableName})
-		tableIndex = len(s.schema.Tables) - 1
-	}
-
-	// Handle different ALTER TABLE operations
-	upperStmt := strings.ToUpper(stmt)
-	switch {
-	case strings.Contains(upperStmt, "ADD CONSTRAINT"):
-		constraint := s.parseConstraint(stmt[strings.Index(strings.ToUpper(stmt), "ADD CONSTRAINT"):])
-		s.schema.Tables[tableIndex].Constraints = append(s.schema.Tables[tableIndex].Constraints, constraint)
-
-	case strings.Contains(upperStmt, "ADD COLUMN") || strings.Contains(upperStmt, "ADD "):
-		// Extract column definition
-		addIndex := strings.Index(strings.ToUpper(stmt), "ADD ")
-		if addIndex == -1 {
-			return fmt.Errorf("invalid ALTER TABLE ADD statement: %s", stmt)
-		}
-
-		colDef := strings.TrimSpace(stmt[addIndex+4:])
-		if strings.HasPrefix(strings.ToUpper(colDef), "COLUMN") {
-			colDef = strings.TrimSpace(colDef[6:])
-		}
-
-		column := s.parseColumn(colDef)
-		s.schema.Tables[tableIndex].Columns = append(s.schema.Tables[tableIndex].Columns, column)
-	}
-
 	return nil
-}
-
-// parseCreateView parses a CREATE VIEW statement and returns a View structure.
-func (s *SQLServer) parseCreateView(stmt string) (sqlmapper.View, error) {
-	view := sqlmapper.View{}
-
-	// Extract view name
-	viewRegex := regexp.MustCompile(`CREATE\s+VIEW\s+(?:\[?dbo\]?\.)?\[?(\w+)\]?`)
-	matches := viewRegex.FindStringSubmatch(stmt)
-	if len(matches) > 1 {
-		view.Name = matches[1]
-	}
-
-	// Extract view definition
-	asIndex := strings.Index(strings.ToUpper(stmt), " AS ")
-	if asIndex != -1 {
-		view.Definition = strings.TrimSpace(stmt[asIndex+4:])
-	}
-
-	return view, nil
-}
-
-// parseCreateTrigger parses a CREATE TRIGGER statement and returns a Trigger structure.
-func (s *SQLServer) parseCreateTrigger(stmt string) (sqlmapper.Trigger, error) {
-	trigger := sqlmapper.Trigger{}
-
-	// Extract trigger name
-	triggerRegex := regexp.MustCompile(`CREATE\s+TRIGGER\s+\[?(\w+)\]?`)
-	matches := triggerRegex.FindStringSubmatch(stmt)
-	if len(matches) > 1 {
-		trigger.Name = matches[1]
-	}
-
-	// Extract timing (AFTER/FOR/INSTEAD OF)
-	if strings.Contains(strings.ToUpper(stmt), "AFTER") {
-		trigger.Timing = "AFTER"
-	} else if strings.Contains(strings.ToUpper(stmt), "INSTEAD OF") {
-		trigger.Timing = "INSTEAD OF"
-	} else {
-		trigger.Timing = "FOR"
-	}
-
-	// Extract event (INSERT/UPDATE/DELETE)
-	if strings.Contains(strings.ToUpper(stmt), "INSERT") {
-		trigger.Event = "INSERT"
-	} else if strings.Contains(strings.ToUpper(stmt), "UPDATE") {
-		trigger.Event = "UPDATE"
-	} else if strings.Contains(strings.ToUpper(stmt), "DELETE") {
-		trigger.Event = "DELETE"
-	}
-
-	// Extract table name
-	tableRegex := regexp.MustCompile(`ON\s+(?:\[?dbo\]?\.)?\[?(\w+)\]?`)
-	matches = tableRegex.FindStringSubmatch(stmt)
-	if len(matches) > 1 {
-		trigger.Table = matches[1]
-	}
-
-	// Extract trigger body
-	asIndex := strings.Index(strings.ToUpper(stmt), " AS ")
-	if asIndex != -1 {
-		trigger.Body = strings.TrimSpace(stmt[asIndex+4:])
-	}
-
-	return trigger, nil
 }
 
 // splitAndTrim splits a string by commas and trims whitespace and brackets from each part.
@@ -467,15 +333,6 @@ func (s *SQLServer) splitAndTrim(str string) []string {
 		result[i] = strings.Trim(strings.TrimSpace(part), "[]")
 	}
 	return result
-}
-
-// extractColumns extracts column names from a constraint definition.
-func (s *SQLServer) extractColumns(def string, afterKeyword string) []string {
-	regex := regexp.MustCompile(afterKeyword + `\s*\((.*?)\)`)
-	if matches := regex.FindStringSubmatch(def); len(matches) > 1 {
-		return s.splitAndTrim(matches[1])
-	}
-	return nil
 }
 
 // Generate creates a SQL Server SQL dump from a schema structure.
@@ -496,64 +353,257 @@ func (s *SQLServer) Generate(schema *sqlmapper.Schema) (string, error) {
 		return "", errors.New("empty schema")
 	}
 
-	var result strings.Builder
+	s.buf.Reset()
 
 	for _, table := range schema.Tables {
-		result.WriteString("CREATE TABLE ")
-		result.WriteString(table.Name)
-		result.WriteString(" (\n")
+		s.buf.WriteString("CREATE TABLE ")
+		s.buf.WriteString(table.Name)
+		s.buf.WriteString(" (\n")
 
 		for i, col := range table.Columns {
-			result.WriteString("    ")
-			result.WriteString(col.Name)
-			result.WriteString(" ")
-			result.WriteString(col.DataType)
+			s.buf.WriteString("    ")
+			s.buf.WriteString(col.Name)
+			s.buf.WriteByte(' ')
+			s.buf.WriteString(col.DataType)
 
 			if col.Length > 0 {
 				if col.Scale > 0 {
-					result.WriteString(fmt.Sprintf("(%d,%d)", col.Length, col.Scale))
+					fmt.Fprintf(s.buf, "(%d,%d)", col.Length, col.Scale)
 				} else {
-					result.WriteString(fmt.Sprintf("(%d)", col.Length))
+					fmt.Fprintf(s.buf, "(%d)", col.Length)
 				}
 			}
 
 			if col.IsPrimaryKey {
-				result.WriteString(" PRIMARY KEY")
+				s.buf.WriteString(" PRIMARY KEY")
 			} else if !col.IsNullable {
-				result.WriteString(" NOT NULL")
+				s.buf.WriteString(" NOT NULL")
 			}
 
 			if col.IsUnique && !col.IsPrimaryKey {
-				result.WriteString(" UNIQUE")
+				s.buf.WriteString(" UNIQUE")
 			}
 
 			if col.AutoIncrement {
-				result.WriteString(" IDENTITY(1,1)")
+				s.buf.WriteString(" IDENTITY(1,1)")
 			}
 
 			if i < len(table.Columns)-1 {
-				result.WriteString(",")
+				s.buf.WriteByte(',')
 			}
-			result.WriteString("\n")
+			s.buf.WriteByte('\n')
 		}
 
-		result.WriteString(");\n")
+		s.buf.WriteString(");\n")
 
 		// Add indexes
 		for _, idx := range table.Indexes {
 			if idx.IsUnique {
-				result.WriteString("CREATE UNIQUE INDEX ")
+				s.buf.WriteString("CREATE UNIQUE INDEX ")
 			} else {
-				result.WriteString("CREATE INDEX ")
+				s.buf.WriteString("CREATE INDEX ")
 			}
-			result.WriteString(idx.Name)
-			result.WriteString(" ON ")
-			result.WriteString(table.Name)
-			result.WriteString("(")
-			result.WriteString(strings.Join(idx.Columns, ", "))
-			result.WriteString(");\n")
+			s.buf.WriteString(idx.Name)
+			s.buf.WriteString(" ON ")
+			s.buf.WriteString(table.Name)
+			s.buf.WriteByte('(')
+			s.buf.WriteString(strings.Join(idx.Columns, ", "))
+			s.buf.WriteString(");\n")
 		}
 	}
 
-	return result.String(), nil
+	return s.buf.String(), nil
+}
+
+// parseCreateIndex parses a CREATE INDEX statement and adds the index to the appropriate table.
+func (s *SQLServer) parseCreateIndex(stmt []byte) error {
+	isUnique := bytes.HasPrefix(bytes.ToUpper(stmt), []byte("CREATE UNIQUE"))
+
+	// Extract index name and table name
+	parts := bytes.Fields(stmt)
+	if len(parts) < 4 {
+		return fmt.Errorf("invalid CREATE INDEX statement")
+	}
+
+	var indexNamePos, tableNamePos int
+	if isUnique {
+		indexNamePos = 3
+		tableNamePos = 5
+	} else {
+		indexNamePos = 2
+		tableNamePos = 4
+	}
+
+	if len(parts) <= tableNamePos {
+		return fmt.Errorf("invalid CREATE INDEX statement: missing table name")
+	}
+
+	indexName := string(bytes.Trim(parts[indexNamePos], "[]"))
+	tableName := string(bytes.Trim(parts[tableNamePos], "[]"))
+
+	// Remove schema prefix if exists
+	if idx := bytes.LastIndex(parts[tableNamePos], []byte(".")); idx != -1 {
+		tableName = string(bytes.Trim(parts[tableNamePos][idx+1:], "[]"))
+	}
+
+	// Extract columns
+	startIdx := bytes.LastIndex(stmt, []byte("("))
+	endIdx := bytes.LastIndex(stmt, []byte(")"))
+	if startIdx == -1 || endIdx == -1 {
+		return fmt.Errorf("no columns found in CREATE INDEX statement")
+	}
+
+	columns := s.splitAndTrim(string(bytes.TrimSpace(stmt[startIdx+1 : endIdx])))
+
+	// Find the table and add the index
+	for i, table := range s.schema.Tables {
+		if table.Name == tableName {
+			s.schema.Tables[i].Indexes = append(s.schema.Tables[i].Indexes, sqlmapper.Index{
+				Name:     indexName,
+				Columns:  columns,
+				IsUnique: isUnique,
+			})
+			return nil
+		}
+	}
+
+	return fmt.Errorf("table not found for index: %s", tableName)
+}
+
+// parseAlterTable parses an ALTER TABLE statement and modifies the appropriate table.
+func (s *SQLServer) parseAlterTable(stmt []byte) error {
+	// Extract table name
+	parts := bytes.Fields(stmt)
+	if len(parts) < 3 {
+		return fmt.Errorf("invalid ALTER TABLE statement")
+	}
+
+	tableName := string(bytes.Trim(parts[2], "[]"))
+	// Remove schema prefix if exists
+	if idx := bytes.LastIndex(parts[2], []byte(".")); idx != -1 {
+		tableName = string(bytes.Trim(parts[2][idx+1:], "[]"))
+	}
+
+	// Find the table
+	var tableIndex = -1
+	for i, table := range s.schema.Tables {
+		if table.Name == tableName {
+			tableIndex = i
+			break
+		}
+	}
+
+	if tableIndex == -1 {
+		// Create new table if it doesn't exist
+		s.schema.Tables = append(s.schema.Tables, sqlmapper.Table{Name: tableName})
+		tableIndex = len(s.schema.Tables) - 1
+	}
+
+	// Handle different ALTER TABLE operations
+	upperStmt := bytes.ToUpper(stmt)
+	switch {
+	case bytes.Contains(upperStmt, []byte("ADD CONSTRAINT")):
+		if idx := bytes.Index(upperStmt, []byte("ADD CONSTRAINT")); idx != -1 {
+			constraint := s.parseConstraint(stmt[idx:])
+			s.schema.Tables[tableIndex].Constraints = append(s.schema.Tables[tableIndex].Constraints, constraint)
+		}
+
+	case bytes.Contains(upperStmt, []byte("ADD COLUMN")) || bytes.Contains(upperStmt, []byte("ADD ")):
+		// Extract column definition
+		addIndex := bytes.Index(upperStmt, []byte("ADD "))
+		if addIndex == -1 {
+			return fmt.Errorf("invalid ALTER TABLE ADD statement")
+		}
+
+		colDef := bytes.TrimSpace(stmt[addIndex+4:])
+		if bytes.HasPrefix(bytes.ToUpper(colDef), []byte("COLUMN")) {
+			colDef = bytes.TrimSpace(colDef[6:])
+		}
+
+		column := s.parseColumn(colDef)
+		s.schema.Tables[tableIndex].Columns = append(s.schema.Tables[tableIndex].Columns, column)
+	}
+
+	return nil
+}
+
+// parseCreateView parses a CREATE VIEW statement and returns a View structure.
+func (s *SQLServer) parseCreateView(stmt []byte) (sqlmapper.View, error) {
+	view := sqlmapper.View{}
+
+	// Extract view name
+	parts := bytes.Fields(stmt)
+	if len(parts) < 3 {
+		return view, fmt.Errorf("invalid CREATE VIEW statement")
+	}
+
+	viewName := string(bytes.Trim(parts[2], "[]"))
+	// Remove schema prefix if exists
+	if idx := bytes.LastIndex(parts[2], []byte(".")); idx != -1 {
+		viewName = string(bytes.Trim(parts[2][idx+1:], "[]"))
+	}
+	view.Name = viewName
+
+	// Extract view definition
+	if idx := bytes.Index(bytes.ToUpper(stmt), []byte(" AS ")); idx != -1 {
+		view.Definition = string(bytes.TrimSpace(stmt[idx+4:]))
+	}
+
+	return view, nil
+}
+
+// parseCreateTrigger parses a CREATE TRIGGER statement and returns a Trigger structure.
+func (s *SQLServer) parseCreateTrigger(stmt []byte) (sqlmapper.Trigger, error) {
+	trigger := sqlmapper.Trigger{}
+
+	// Extract trigger name
+	parts := bytes.Fields(stmt)
+	if len(parts) < 3 {
+		return trigger, fmt.Errorf("invalid CREATE TRIGGER statement")
+	}
+
+	triggerName := string(bytes.Trim(parts[2], "[]"))
+	trigger.Name = triggerName
+
+	upperStmt := bytes.ToUpper(stmt)
+
+	// Extract timing (AFTER/FOR/INSTEAD OF)
+	switch {
+	case bytes.Contains(upperStmt, []byte("AFTER")):
+		trigger.Timing = "AFTER"
+	case bytes.Contains(upperStmt, []byte("INSTEAD OF")):
+		trigger.Timing = "INSTEAD OF"
+	default:
+		trigger.Timing = "FOR"
+	}
+
+	// Extract event (INSERT/UPDATE/DELETE)
+	switch {
+	case bytes.Contains(upperStmt, []byte("INSERT")):
+		trigger.Event = "INSERT"
+	case bytes.Contains(upperStmt, []byte("UPDATE")):
+		trigger.Event = "UPDATE"
+	case bytes.Contains(upperStmt, []byte("DELETE")):
+		trigger.Event = "DELETE"
+	}
+
+	// Extract table name
+	if idx := bytes.Index(upperStmt, []byte(" ON ")); idx != -1 {
+		rest := stmt[idx+4:]
+		if spaceIdx := bytes.Index(rest, []byte(" ")); spaceIdx != -1 {
+			tableName := bytes.TrimSpace(rest[:spaceIdx])
+			// Remove schema prefix if exists
+			if dotIdx := bytes.LastIndex(tableName, []byte(".")); dotIdx != -1 {
+				tableName = tableName[dotIdx+1:]
+			}
+			trigger.Table = string(bytes.Trim(tableName, "[]"))
+		}
+	}
+
+	// Extract trigger body
+	if idx := bytes.Index(upperStmt, []byte(" AS ")); idx != -1 {
+		trigger.Body = string(bytes.TrimSpace(stmt[idx+4:]))
+	}
+
+	return trigger, nil
 }
