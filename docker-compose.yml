@@ -1,12 +1,12 @@
 version: '3.8'
 
 services:
-  sdc:
+  sqlporter:
     build:
       context: .
       dockerfile: Dockerfile
-    image: mstgnz/sdc:latest
-    container_name: sdc
+    image: mstgnz/sqlporter:latest
+    container_name: sqlporter
     restart: unless-stopped
     environment:
       - TZ=UTC
@@ -14,8 +14,8 @@ services:
       - ./config:/root/config
       - ./data:/root/data
     networks:
-      - sdc-network
+      - sqlporter-network
 
 networks:
-  sdc-network:
+  sqlporter-network:
     driver: bridge 
