@@ -54,7 +54,7 @@ type Column struct {
 	Length          int
 	Scale           int
 	Precision       int
-	IsNullable      bool
+	IsNullable      bool `default:"true"`
 	DefaultValue    string
 	AutoIncrement   bool
 	IsPrimaryKey    bool
