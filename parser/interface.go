@@ -3,6 +3,7 @@ package parser
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"unicode"
@@ -94,12 +95,16 @@ var DatabaseInfoMap = map[DatabaseType]DatabaseInfo{
 
 // SanitizeString removes potentially dangerous characters from a string
 func SanitizeString(s string) string {
-	dangerous := []string{"'", "\"", ";", "--", "/*", "*/", "@@", "@"}
-	result := s
-	for _, ch := range dangerous {
-		result = strings.ReplaceAll(result, ch, "")
-	}
-	return result
+	// Tehlikeli karakterleri temizle
+	s = strings.ReplaceAll(s, "'", "")
+	s = strings.ReplaceAll(s, "\"", "")
+	s = strings.ReplaceAll(s, ";", "")
+	s = strings.ReplaceAll(s, "--", "")
+	s = strings.ReplaceAll(s, "/*", "")
+	s = strings.ReplaceAll(s, "*/", "")
+
+	// Başındaki ve sonundaki boşlukları kaldır
+	return strings.TrimSpace(s)
 }
 
 // LogSensitiveData logs potentially sensitive data if logging is enabled
@@ -143,39 +148,37 @@ func ValidateIdentifierSafety(name string, options SecurityOptions) error {
 }
 
 // ValidateQuerySafety performs security checks on SQL queries
-func ValidateQuerySafety(sql string, options SecurityOptions) error {
-	if sql == "" {
-		return fmt.Errorf("empty SQL query")
+func ValidateQuerySafety(query string, options SecurityOptions) error {
+	if query == "" {
+		return errors.New("empty SQL query")
 	}
 
-	if len(sql) > options.MaxQueryLength {
-		return fmt.Errorf("SQL query exceeds maximum length of %d", options.MaxQueryLength)
+	if len(query) > options.MaxQueryLength {
+		return fmt.Errorf("query length %d exceeds maximum length %d", len(query), options.MaxQueryLength)
 	}
 
-	upperSQL := strings.ToUpper(sql)
+	// Birden fazla SQL ifadesi kontrolü
+	if strings.Count(query, ";") > 0 {
+		return errors.New("multiple SQL statements are not allowed")
+	}
 
-	// Check for dangerous patterns
+	// Tehlikeli kalıpları kontrol et
 	dangerousPatterns := []string{
-		"EXECUTE", "EXEC", "SP_", "XP_",
-		"WAITFOR", "DELAY", "SHUTDOWN",
-		"BULK INSERT", "OPENROWSET", "OPENQUERY",
+		"EXEC", "EXECUTE", "sp_", "xp_",
+		"OPENROWSET", "OPENDATASOURCE",
 	}
 
+	queryLower := strings.ToLower(query)
 	for _, pattern := range dangerousPatterns {
-		if strings.Contains(upperSQL, pattern) {
-			return fmt.Errorf("SQL query contains dangerous pattern: %s", pattern)
+		if strings.Contains(queryLower, strings.ToLower(pattern)) {
+			return fmt.Errorf("query contains dangerous pattern: %s", pattern)
 		}
 	}
 
-	// Check for stacked queries
-	if strings.Count(sql, ";") > 1 {
-		return fmt.Errorf("multiple SQL statements are not allowed")
-	}
-
-	// Check for comments if disabled
+	// Yorumları kontrol et
 	if options.DisableComments {
-		if strings.Contains(sql, "--") || strings.Contains(sql, "/*") {
-			return fmt.Errorf("SQL comments are not allowed")
+		if strings.Contains(query, "--") || strings.Contains(query, "/*") {
+			return errors.New("comments are not allowed")
 		}
 	}
 
