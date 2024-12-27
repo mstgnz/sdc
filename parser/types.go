@@ -110,16 +110,17 @@ func (c *Converter) RegisterCollation(collation CollationConfig) {
 
 // ConvertType converts a value from one type to another
 func (c *Converter) ConvertType(value interface{}, sourceType string, targetType string, sourceVersion, targetVersion *Version) (interface{}, error) {
-	key := fmt.Sprintf("%s_%s", sourceType, targetType)
-	mappings, exists := c.typeMappings[key]
+	// Eşlemeleri kontrol et
+	mappings, exists := c.typeMappings[sourceType]
 	if !exists {
 		return nil, fmt.Errorf("no mapping found for %s to %s", sourceType, targetType)
 	}
 
-	// Find suitable mapping based on versions
+	// Hedef tipe uygun eşlemeyi bul
 	var selectedMapping *TypeMapping
 	for _, m := range mappings {
-		if isVersionCompatible(m.SourceVersion, sourceVersion) &&
+		if m.TargetType == targetType &&
+			isVersionCompatible(m.SourceVersion, sourceVersion) &&
 			isVersionCompatible(m.TargetVersion, targetVersion) {
 			selectedMapping = &m
 			break
@@ -135,7 +136,7 @@ func (c *Converter) ConvertType(value interface{}, sourceType string, targetType
 
 // GetCharSet returns character set information
 func (c *Converter) GetCharSet(name string) (CharSet, error) {
-	charset, exists := c.charSets[strings.ToUpper(name)]
+	charset, exists := c.charSets[name]
 	if !exists {
 		return CharSet{}, fmt.Errorf("character set %s not found", name)
 	}
