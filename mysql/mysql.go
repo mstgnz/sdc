@@ -1,3 +1,5 @@
+// Package mysql provides functionality for parsing and generating MySQL database schemas.
+// It implements the Parser interface for handling MySQL specific SQL syntax and schema structures.
 package mysql
 
 import (
@@ -9,18 +11,37 @@ import (
 	"github.com/mstgnz/sqlmapper"
 )
 
+// MySQL represents a MySQL parser implementation that handles parsing and generating
+// MySQL database schemas. It maintains an internal schema representation and provides
+// methods for converting between MySQL SQL and the common schema format.
 type MySQL struct {
 	schema *sqlmapper.Schema
 }
 
-// NewMySQL creates a new MySQL parser instance
+// NewMySQL creates and initializes a new MySQL parser instance.
+// It returns a parser that can handle MySQL specific SQL syntax and schema structures.
 func NewMySQL() *MySQL {
 	return &MySQL{
 		schema: &sqlmapper.Schema{},
 	}
 }
 
-// Parse parses MySQL dump content
+// Parse takes a MySQL SQL dump content and parses it into a common schema structure.
+// It processes various MySQL objects including:
+// - Databases and schemas
+// - Tables with columns and constraints
+// - Indexes (including PRIMARY, UNIQUE, and FULLTEXT)
+// - Views
+// - Stored procedures and functions
+// - Triggers
+// - User privileges
+//
+// Parameters:
+//   - content: The MySQL SQL dump content to parse
+//
+// Returns:
+//   - *sqlmapper.Schema: The parsed schema structure
+//   - error: An error if parsing fails
 func (m *MySQL) Parse(content string) (*sqlmapper.Schema, error) {
 	if content == "" {
 		return nil, errors.New("empty content")
@@ -61,7 +82,20 @@ func (m *MySQL) Parse(content string) (*sqlmapper.Schema, error) {
 	return m.schema, nil
 }
 
-// Generate generates MySQL dump from schema
+// Generate creates a MySQL SQL dump from a schema structure.
+// It generates SQL statements for all database objects in the schema, including:
+// - Tables with columns, indexes, and constraints
+// - Views
+// - Stored procedures and functions
+// - Triggers
+// - User privileges
+//
+// Parameters:
+//   - schema: The schema structure to convert to MySQL SQL
+//
+// Returns:
+//   - string: The generated MySQL SQL statements
+//   - error: An error if generation fails
 func (m *MySQL) Generate(schema *sqlmapper.Schema) (string, error) {
 	if schema == nil {
 		return "", errors.New("empty schema")
@@ -91,8 +125,14 @@ func (m *MySQL) Generate(schema *sqlmapper.Schema) (string, error) {
 	return result.String(), nil
 }
 
-// Helper functions for parsing
-
+// normalizeContent preprocesses the SQL content by removing comments and normalizing whitespace.
+// It handles MySQL specific comment styles (-- and #) and DELIMITER statements.
+//
+// Parameters:
+//   - content: The SQL content to normalize
+//
+// Returns:
+//   - string: The normalized SQL content
 func (m *MySQL) normalizeContent(content string) string {
 	// Remove comments
 	re := regexp.MustCompile(`--.*$|#.*$`)
@@ -108,6 +148,14 @@ func (m *MySQL) normalizeContent(content string) string {
 	return content
 }
 
+// parseSchemas extracts database definitions from the SQL content.
+// It handles CREATE DATABASE and USE statements.
+//
+// Parameters:
+//   - content: The SQL content to parse
+//
+// Returns:
+//   - error: An error if parsing fails
 func (m *MySQL) parseSchemas(content string) error {
 	// Parse CREATE DATABASE
 	dbRe := regexp.MustCompile(`CREATE\s+DATABASE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)`)
@@ -118,6 +166,15 @@ func (m *MySQL) parseSchemas(content string) error {
 	return nil
 }
 
+// parseTables extracts table definitions from the SQL content.
+// It processes table structure including columns, indexes, constraints,
+// and table options like ENGINE, CHARSET, and COLLATE.
+//
+// Parameters:
+//   - content: The SQL content to parse
+//
+// Returns:
+//   - error: An error if parsing fails
 func (m *MySQL) parseTables(content string) error {
 	re := regexp.MustCompile(`CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([.\w]+)\s*\((.*?)\)(?:\s+ENGINE\s*=\s*\w+)?(?:\s+DEFAULT\s+CHARSET\s*=\s*\w+)?(?:\s+COLLATE\s*=\s*\w+)?;`)
 	matches := re.FindAllStringSubmatch(content, -1)
@@ -177,6 +234,15 @@ func (m *MySQL) parseTables(content string) error {
 	return nil
 }
 
+// parseColumnsAndConstraints processes column and constraint definitions within a table.
+// It handles various column attributes and both inline and table-level constraints.
+//
+// Parameters:
+//   - columnDefs: The column definitions string to parse
+//   - table: The table structure to populate
+//
+// Returns:
+//   - error: An error if parsing fails
 func (m *MySQL) parseColumnsAndConstraints(columnDefs string, table *sqlmapper.Table) error {
 	// Split column definitions
 	defs := strings.Split(columnDefs, ",")
@@ -263,6 +329,16 @@ func (m *MySQL) parseColumnsAndConstraints(columnDefs string, table *sqlmapper.T
 	return nil
 }
 
+// parseColumn processes a single column definition.
+// It handles various column attributes including data type, length/precision,
+// nullability, defaults, auto increment, and inline constraints.
+//
+// Parameters:
+//   - def: The column definition string to parse
+//
+// Returns:
+//   - sqlmapper.Column: The parsed column structure
+//   - error: An error if parsing fails
 func (m *MySQL) parseColumn(def string) (sqlmapper.Column, error) {
 	parts := strings.Fields(def)
 	if len(parts) < 2 {
@@ -349,6 +425,16 @@ func (m *MySQL) parseColumn(def string) (sqlmapper.Column, error) {
 	return column, nil
 }
 
+// parseConstraint processes a table constraint definition.
+// It handles various constraint types including PRIMARY KEY, FOREIGN KEY,
+// UNIQUE, and CHECK constraints.
+//
+// Parameters:
+//   - def: The constraint definition string to parse
+//
+// Returns:
+//   - sqlmapper.Constraint: The parsed constraint structure
+//   - error: An error if parsing fails
 func (m *MySQL) parseConstraint(def string) (sqlmapper.Constraint, error) {
 	constraint := sqlmapper.Constraint{}
 
@@ -411,6 +497,15 @@ func (m *MySQL) parseConstraint(def string) (sqlmapper.Constraint, error) {
 	return constraint, nil
 }
 
+// parseIndexes extracts index definitions from the SQL content.
+// It handles various index types including PRIMARY KEY, UNIQUE,
+// FULLTEXT, and regular indexes.
+//
+// Parameters:
+//   - content: The SQL content to parse
+//
+// Returns:
+//   - error: An error if parsing fails
 func (m *MySQL) parseIndexes(content string) error {
 	re := regexp.MustCompile(`CREATE\s+(?:UNIQUE\s+)?(?:FULLTEXT\s+)?INDEX\s+(\w+)\s+ON\s+([.\w]+)\s*\((.*?)\)`)
 	matches := re.FindAllStringSubmatch(content, -1)
@@ -445,6 +540,14 @@ func (m *MySQL) parseIndexes(content string) error {
 	return nil
 }
 
+// parseViews processes view definitions from the SQL content.
+// It handles both regular and updatable views with their definitions.
+//
+// Parameters:
+//   - content: The SQL content to parse
+//
+// Returns:
+//   - error: An error if parsing fails
 func (m *MySQL) parseViews(content string) error {
 	viewRe := regexp.MustCompile(`CREATE(?:\s+OR\s+REPLACE)?\s+VIEW\s+([.\w]+)\s+AS\s+(.*?);`)
 	viewMatches := viewRe.FindAllStringSubmatch(content, -1)
@@ -472,6 +575,15 @@ func (m *MySQL) parseViews(content string) error {
 	return nil
 }
 
+// parseFunctions extracts function and procedure definitions from the SQL content.
+// It handles various routine attributes including parameters, return types,
+// and procedure parameter directions (IN/OUT/INOUT).
+//
+// Parameters:
+//   - content: The SQL content to parse
+//
+// Returns:
+//   - error: An error if parsing fails
 func (m *MySQL) parseFunctions(content string) error {
 	// Parse functions
 	funcRe := regexp.MustCompile(`CREATE\s+FUNCTION\s+([.\w]+)\s*\((.*?)\)\s+RETURNS\s+(\w+)\s+BEGIN\s+(.*?)\s+END`)
@@ -556,6 +668,15 @@ func (m *MySQL) parseFunctions(content string) error {
 	return nil
 }
 
+// parseTriggers processes trigger definitions from the SQL content.
+// It handles trigger timing (BEFORE/AFTER), events (INSERT/UPDATE/DELETE),
+// and trigger bodies.
+//
+// Parameters:
+//   - content: The SQL content to parse
+//
+// Returns:
+//   - error: An error if parsing fails
 func (m *MySQL) parseTriggers(content string) error {
 	triggerRe := regexp.MustCompile(`CREATE\s+TRIGGER\s+(\w+)\s+(BEFORE|AFTER)\s+(INSERT|UPDATE|DELETE)\s+ON\s+([.\w]+)\s+FOR\s+EACH\s+ROW\s+BEGIN\s+(.*?)\s+END`)
 	triggerMatches := triggerRe.FindAllStringSubmatch(content, -1)
@@ -585,6 +706,15 @@ func (m *MySQL) parseTriggers(content string) error {
 	return nil
 }
 
+// parsePermissions extracts user privilege definitions from the SQL content.
+// It handles GRANT and REVOKE statements for various privilege types,
+// including table privileges and routine (PROCEDURE/FUNCTION) privileges.
+//
+// Parameters:
+//   - content: The SQL content to parse
+//
+// Returns:
+//   - error: An error if parsing fails
 func (m *MySQL) parsePermissions(content string) error {
 	// Parse GRANT statements for tables
 	grantRe := regexp.MustCompile(`GRANT\s+(.*?)\s+ON\s+([.\w*]+)\s+TO\s+'([^']+)'@'([^']+)'(?:\s+WITH\s+GRANT\s+OPTION)?;`)
@@ -665,8 +795,14 @@ func (m *MySQL) parsePermissions(content string) error {
 	return nil
 }
 
-// Helper functions for generating SQL
-
+// generateTableSQL creates a CREATE TABLE statement for the given table.
+// It includes column definitions, constraints, indexes, and table options.
+//
+// Parameters:
+//   - table: The table structure to generate SQL for
+//
+// Returns:
+//   - string: The generated CREATE TABLE statement
 func (m *MySQL) generateTableSQL(table sqlmapper.Table) string {
 	var result strings.Builder
 
@@ -685,6 +821,15 @@ func (m *MySQL) generateTableSQL(table sqlmapper.Table) string {
 	return result.String()
 }
 
+// generateColumnSQL creates the SQL definition for a single column.
+// It handles various column attributes including data type, length/precision,
+// nullability, defaults, auto increment, and constraints.
+//
+// Parameters:
+//   - column: The column structure to generate SQL for
+//
+// Returns:
+//   - string: The generated column definition
 func (m *MySQL) generateColumnSQL(column sqlmapper.Column) string {
 	var parts []string
 	parts = append(parts, column.Name)
@@ -726,6 +871,15 @@ func (m *MySQL) generateColumnSQL(column sqlmapper.Column) string {
 	return strings.Join(parts, " ")
 }
 
+// generateIndexSQL creates a CREATE INDEX statement for the given index.
+// It handles various index types including UNIQUE and regular indexes.
+//
+// Parameters:
+//   - tableName: The name of the table the index belongs to
+//   - index: The index structure to generate SQL for
+//
+// Returns:
+//   - string: The generated CREATE INDEX statement
 func (m *MySQL) generateIndexSQL(tableName string, index sqlmapper.Index) string {
 	var result strings.Builder
 
