@@ -1,69 +1,172 @@
--- Create Database
+-- Example MySQL database schema with common features
 CREATE DATABASE IF NOT EXISTS example_db;
 USE example_db;
 
--- Create Tables
+-- User management tables
 CREATE TABLE users (
     id INT AUTO_INCREMENT PRIMARY KEY,
     username VARCHAR(50) NOT NULL UNIQUE,
-    email VARCHAR(100) NOT NULL,
-    password VARCHAR(255) NOT NULL,
-    status ENUM('active', 'inactive') DEFAULT 'active',
+    email VARCHAR(100) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    first_name VARCHAR(50),
+    last_name VARCHAR(50),
+    date_of_birth DATE,
+    status ENUM('active', 'inactive', 'suspended') DEFAULT 'active',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    last_login TIMESTAMP NULL,
+    is_admin BOOLEAN DEFAULT FALSE,
+    metadata JSON,
+    INDEX idx_user_status (status),
+    INDEX idx_user_email (email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE posts (
+-- Product catalog
+CREATE TABLE categories (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT NOT NULL,
-    title VARCHAR(255) NOT NULL,
-    content TEXT,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    parent_id INT NULL,
+    level INT GENERATED ALWAYS AS (
+        CASE
+            WHEN parent_id IS NULL THEN 0
+            ELSE 1 + (SELECT level FROM categories p WHERE p.id = categories.parent_id)
+        END
+    ) STORED,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (parent_id) REFERENCES categories(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE products (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    category_id INT NOT NULL,
+    name VARCHAR(200) NOT NULL,
+    description TEXT,
+    price DECIMAL(10,2) NOT NULL,
+    stock_quantity INT UNSIGNED DEFAULT 0,
     status ENUM('draft', 'published', 'archived') DEFAULT 'draft',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    CONSTRAINT fk_posts_users FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    metadata JSON,
+    FOREIGN KEY (category_id) REFERENCES categories(id),
+    FULLTEXT INDEX idx_product_search (name, description)
+) ENGINE=InnoDB;
 
--- Create Indexes
-CREATE INDEX idx_users_email ON users(email);
-CREATE INDEX idx_posts_user_id ON posts(user_id);
-CREATE INDEX idx_posts_status ON posts(status);
+-- Order management
+CREATE TABLE orders (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    order_number VARCHAR(50) NOT NULL UNIQUE,
+    status ENUM('pending', 'processing', 'shipped', 'delivered', 'cancelled') DEFAULT 'pending',
+    total_amount DECIMAL(12,2) NOT NULL,
+    shipping_address TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB;
 
--- Create View
-CREATE OR REPLACE VIEW active_users_view AS
-SELECT 
-    u.*,
-    COUNT(p.id) as post_count,
-    MAX(p.created_at) as last_post_date
-FROM users u
-LEFT JOIN posts p ON u.id = p.user_id
-WHERE u.status = 'active'
-GROUP BY u.id;
+CREATE TABLE order_items (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    order_id INT NOT NULL,
+    product_id INT NOT NULL,
+    quantity INT NOT NULL CHECK (quantity > 0),
+    unit_price DECIMAL(10,2) NOT NULL,
+    total_price DECIMAL(12,2) GENERATED ALWAYS AS (quantity * unit_price) STORED,
+    FOREIGN KEY (order_id) REFERENCES orders(id),
+    FOREIGN KEY (product_id) REFERENCES products(id)
+) ENGINE=InnoDB;
 
--- Create Trigger for Logging
+-- Reviews and ratings
+CREATE TABLE reviews (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    product_id INT NOT NULL,
+    user_id INT NOT NULL,
+    rating TINYINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    title VARCHAR(200),
+    content TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_verified BOOLEAN DEFAULT FALSE,
+    UNIQUE KEY unique_review (product_id, user_id),
+    FOREIGN KEY (product_id) REFERENCES products(id),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB;
+
+-- Stored procedures
 DELIMITER //
-CREATE TRIGGER users_after_delete
-AFTER DELETE ON users
-FOR EACH ROW
+
+CREATE PROCEDURE calculate_product_rating(IN product_id_param INT, OUT avg_rating DECIMAL(3,2))
 BEGIN
-    INSERT INTO user_logs (user_id, action, action_date)
-    VALUES (OLD.id, 'DELETE', NOW());
+    SELECT AVG(rating) INTO avg_rating
+    FROM reviews
+    WHERE product_id = product_id_param;
 END //
+
+CREATE PROCEDURE update_stock(
+    IN product_id_param INT,
+    IN quantity_param INT,
+    OUT new_stock INT
+)
+BEGIN
+    UPDATE products
+    SET stock_quantity = stock_quantity + quantity_param
+    WHERE id = product_id_param;
+    
+    SELECT stock_quantity INTO new_stock
+    FROM products
+    WHERE id = product_id_param;
+END //
+
 DELIMITER ;
 
--- Insert Data
-INSERT INTO users (id, username, email, password) VALUES
-(1, 'john_doe', 'john@example.com', 'hashed_password_1'),
-(2, 'jane_doe', 'jane@example.com', 'hashed_password_2'),
-(3, 'alice_smith', 'alice@example.com', 'hashed_password_3'),
-(4, 'bob_wilson', 'bob@example.com', 'hashed_password_4');
+-- Triggers
+DELIMITER //
 
-INSERT INTO posts (id, user_id, title, content, status) VALUES
-(1, 1, 'First Post', 'This is my first post content', 'published'),
-(2, 1, 'Second Post', 'This is a draft post', 'draft'),
-(3, 2, 'Hello World', 'Post by Jane', 'published'),
-(4, 2, 'Another Post', 'Another post by Jane', 'published'),
-(5, 3, 'Tech News', 'Latest technology news', 'published'),
-(6, 3, 'Draft Post', 'Work in progress', 'draft'),
-(7, 4, 'Travel Blog', 'My travel experiences', 'published'),
-(8, 4, 'Food Blog', 'Best recipes', 'published');
+CREATE TRIGGER before_order_insert
+BEFORE INSERT ON orders
+FOR EACH ROW
+BEGIN
+    SET NEW.order_number = CONCAT('ORD', DATE_FORMAT(NOW(), '%Y%m%d'), LPAD(FLOOR(RAND() * 10000), 4, '0'));
+END //
+
+CREATE TRIGGER after_order_item_insert
+AFTER INSERT ON order_items
+FOR EACH ROW
+BEGIN
+    UPDATE products
+    SET stock_quantity = stock_quantity - NEW.quantity
+    WHERE id = NEW.product_id;
+END //
+
+DELIMITER ;
+
+-- Sample data
+INSERT INTO categories (name, description, parent_id) VALUES
+    ('Electronics', 'Electronic devices and accessories', NULL),
+    ('Computers', 'Desktop and laptop computers', 1),
+    ('Smartphones', 'Mobile phones and accessories', 1),
+    ('Books', 'Physical and digital books', NULL),
+    ('Programming', 'Programming and technical books', 4);
+
+INSERT INTO users (username, email, password_hash, first_name, last_name, status) VALUES
+    ('john_doe', 'john@example.com', SHA2('password123', 256), 'John', 'Doe', 'active'),
+    ('jane_smith', 'jane@example.com', SHA2('password456', 256), 'Jane', 'Smith', 'active');
+
+INSERT INTO products (category_id, name, description, price, stock_quantity, status) VALUES
+    (2, 'Gaming Laptop', '15" Gaming Laptop with RTX 3080', 1499.99, 10, 'published'),
+    (3, 'Smartphone X', 'Latest smartphone with 5G support', 999.99, 20, 'published'),
+    (5, 'Python Programming', 'Complete guide to Python programming', 49.99, 100, 'published');
+
+-- Views
+CREATE VIEW product_summary AS
+SELECT 
+    p.id,
+    p.name,
+    c.name AS category,
+    p.price,
+    p.stock_quantity,
+    COUNT(r.id) AS review_count,
+    AVG(r.rating) AS avg_rating
+FROM products p
+LEFT JOIN categories c ON p.category_id = c.id
+LEFT JOIN reviews r ON p.id = r.product_id
+GROUP BY p.id;
