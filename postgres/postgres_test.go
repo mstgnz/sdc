@@ -372,10 +372,10 @@ func TestPostgreSQL_Parse(t *testing.T) {
 
 func TestPostgreSQL_Generate(t *testing.T) {
 	tests := []struct {
-		name       string
-		schema     *sqlporter.Schema
-		wantErr    bool
-		wantOutput string
+		name    string
+		schema  *sqlporter.Schema
+		want    string
+		wantErr bool
 	}{
 		{
 			name:    "Nil schema",
@@ -389,91 +389,60 @@ func TestPostgreSQL_Generate(t *testing.T) {
 					{
 						Name: "users",
 						Columns: []sqlporter.Column{
-							{
-								Name:          "id",
-								DataType:      "SERIAL",
-								AutoIncrement: true,
-							},
-							{
-								Name:       "username",
-								DataType:   "VARCHAR",
-								Length:     50,
-								IsNullable: false,
-							},
-						},
-						Constraints: []sqlporter.Constraint{
-							{
-								Type:    "PRIMARY KEY",
-								Columns: []string{"id"},
-							},
+							{Name: "id", DataType: "SERIAL", IsPrimaryKey: true},
+							{Name: "name", DataType: "VARCHAR", Length: 100, IsNullable: false},
+							{Name: "email", DataType: "VARCHAR", Length: 255, IsNullable: false, IsUnique: true},
 						},
 					},
 				},
 			},
+			want: strings.TrimSpace(`
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    email VARCHAR(255) NOT NULL UNIQUE
+);`),
 			wantErr: false,
-			wantOutput: `CREATE TABLE users (
-    id SERIAL,
-    username VARCHAR(50) NOT NULL,
-    PRIMARY KEY (id)
-);`,
 		},
 		{
 			name: "Schema with table and indexes",
 			schema: &sqlporter.Schema{
 				Tables: []sqlporter.Table{
 					{
-						Name: "users",
+						Name: "products",
 						Columns: []sqlporter.Column{
-							{
-								Name:          "id",
-								DataType:      "SERIAL",
-								AutoIncrement: true,
-							},
-							{
-								Name:       "email",
-								DataType:   "VARCHAR",
-								Length:     100,
-								IsNullable: false,
-							},
+							{Name: "id", DataType: "SERIAL", IsPrimaryKey: true},
+							{Name: "name", DataType: "VARCHAR", Length: 100, IsNullable: false},
+							{Name: "price", DataType: "NUMERIC", Length: 10, Scale: 2},
 						},
 						Indexes: []sqlporter.Index{
-							{
-								Name:     "idx_users_email",
-								Columns:  []string{"email"},
-								IsUnique: true,
-							},
+							{Name: "idx_name", Columns: []string{"name"}},
+							{Name: "idx_price", Columns: []string{"price"}, IsUnique: true},
 						},
 					},
 				},
 			},
-			wantErr: false,
-			wantOutput: `CREATE TABLE users (
-    id SERIAL,
-    email VARCHAR(100) NOT NULL
+			want: strings.TrimSpace(`
+CREATE TABLE products (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    price NUMERIC(10,2)
 );
-
-CREATE UNIQUE INDEX idx_users_email ON users(email);`,
+CREATE INDEX idx_name ON products(name);
+CREATE UNIQUE INDEX idx_price ON products(price);`),
+			wantErr: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := NewPostgreSQL()
-			output, err := p.Generate(tt.schema)
-
-			if tt.wantErr {
-				assert.Error(t, err)
-				return
+			s := NewPostgreSQL()
+			result, err := s.Generate(tt.schema)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Generate() error = %v, wantErr %v", err, tt.wantErr)
 			}
-
-			assert.NoError(t, err)
-			assert.NotEmpty(t, output)
-
-			if tt.wantOutput != "" {
-				// Normalize whitespace for comparison
-				normalizedOutput := strings.Join(strings.Fields(output), " ")
-				normalizedWant := strings.Join(strings.Fields(tt.wantOutput), " ")
-				assert.Equal(t, normalizedWant, normalizedOutput)
+			if tt.want != "" {
+				assert.Equal(t, tt.want, strings.TrimSpace(result))
 			}
 		})
 	}
