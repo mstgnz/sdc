@@ -11,16 +11,24 @@ import (
 	"github.com/mstgnz/sqlporter/parser"
 )
 
+type SQLTask struct {
+	id        string
+	statement *parser.Statement
+	timeout   time.Duration
+}
+
+func (t *SQLTask) Execute() error {
+	// Task execution logic here
+	return nil
+}
+
 func main() {
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
 	// Initialize worker pool
-	wp := parser.NewWorkerPool(parser.WorkerConfig{
-		Workers:   4,
-		QueueSize: 1000,
-	})
+	wp := parser.NewWorkerPool(4, 1000)
 
 	// Start worker pool
 	wp.Start(ctx)
@@ -59,11 +67,10 @@ func processFiles(_ context.Context, dir string, wp *parser.WorkerPool) error {
 		stmt := parser.NewStatement(string(content))
 
 		// Submit task to worker pool
-		task := parser.Task{
-			ID:        path,
-			Statement: stmt,
-			Priority:  1,
-			Timeout:   10 * time.Second,
+		task := &SQLTask{
+			id:        path,
+			statement: stmt,
+			timeout:   10 * time.Second,
 		}
 
 		if err := wp.Submit(task); err != nil {
