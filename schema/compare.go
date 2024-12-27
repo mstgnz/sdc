@@ -273,5 +273,24 @@ func constraintsEqual(a, b Constraint) bool {
 			return false
 		}
 	}
+
+	// Check references
+	if (a.References == nil) != (b.References == nil) {
+		return false
+	}
+	if a.References != nil {
+		if a.References.Table != b.References.Table {
+			return false
+		}
+		if len(a.References.Columns) != len(b.References.Columns) {
+			return false
+		}
+		for i := range a.References.Columns {
+			if a.References.Columns[i] != b.References.Columns[i] {
+				return false
+			}
+		}
+	}
+
 	return true
 }
