@@ -282,7 +282,7 @@ CREATE TABLE users (
 						Columns: []sqlporter.Column{
 							{Name: "id", DataType: "INT", AutoIncrement: true, IsPrimaryKey: true},
 							{Name: "name", DataType: "VARCHAR", Length: 100, IsNullable: false},
-							{Name: "price", DataType: "DECIMAL", Length: 10, Scale: 2},
+							{Name: "price", DataType: "DECIMAL", Length: 10, Scale: 2, IsNullable: true},
 						},
 						Indexes: []sqlporter.Index{
 							{Name: "idx_name", Columns: []string{"name"}},

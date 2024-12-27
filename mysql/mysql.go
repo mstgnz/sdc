@@ -270,8 +270,9 @@ func (m *MySQL) parseColumn(def string) (sqlporter.Column, error) {
 	}
 
 	column := sqlporter.Column{
-		Name:     parts[0],
-		DataType: parts[1],
+		Name:       parts[0],
+		DataType:   parts[1],
+		IsNullable: true,
 	}
 
 	// Handle AUTO_INCREMENT
@@ -705,8 +706,7 @@ func (m *MySQL) generateColumnSQL(column sqlporter.Column) string {
 	}
 	if column.IsPrimaryKey {
 		parts = append(parts, "PRIMARY KEY")
-	} else if !column.IsNullable {
-		// Handle NOT NULL only if not PRIMARY KEY and explicitly set to false
+	} else if !column.IsNullable && column.DefaultValue == "" {
 		parts = append(parts, "NOT NULL")
 	}
 
