@@ -28,9 +28,9 @@ jobs:
 
       - name: Build
         run: |
-          GOOS=linux GOARCH=amd64 go build -o sdc-linux-amd64
-          GOOS=darwin GOARCH=amd64 go build -o sdc-darwin-amd64
-          GOOS=windows GOARCH=amd64 go build -o sdc-windows-amd64.exe
+          GOOS=linux GOARCH=amd64 go build -o sqlmapper-linux-amd64
+          GOOS=darwin GOARCH=amd64 go build -o sqlmapper-darwin-amd64
+          GOOS=windows GOARCH=amd64 go build -o sqlmapper-windows-amd64.exe
 
       - name: Generate changelog
         id: changelog
@@ -74,8 +74,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./sdc-linux-amd64
-          asset_name: sdc-linux-amd64
+          asset_path: ./sqlmapper-linux-amd64
+          asset_name: sqlmapper-linux-amd64
           asset_content_type: application/octet-stream
 
       - name: Upload macOS Binary
@@ -84,8 +84,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./sdc-darwin-amd64
-          asset_name: sdc-darwin-amd64
+          asset_path: ./sqlmapper-darwin-amd64
+          asset_name: sqlmapper-darwin-amd64
           asset_content_type: application/octet-stream
 
       - name: Upload Windows Binary
@@ -94,8 +94,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./sdc-windows-amd64.exe
-          asset_name: sdc-windows-amd64.exe
+          asset_path: ./sqlmapper-windows-amd64.exe
+          asset_name: sqlmapper-windows-amd64.exe
           asset_content_type: application/octet-stream
 
   docker:
@@ -121,5 +121,5 @@ jobs:
           context: .
           push: true
           tags: |
-            mstgnz/sdc:latest
-            mstgnz/sdc:${{ github.ref_name }}
+            mstgnz/sqlmapper:latest
+            mstgnz/sqlmapper:${{ github.ref_name }}

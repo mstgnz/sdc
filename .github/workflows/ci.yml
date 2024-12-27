@@ -47,4 +47,4 @@ jobs:
         run: go build -v ./...
 
       - name: Build Docker image
-        run: docker build -t sdc .
+        run: docker build -t sqlmapper .
