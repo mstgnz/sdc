@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/mstgnz/sqlporter"
@@ -84,9 +85,9 @@ func TestSQLite_Parse(t *testing.T) {
 
 func TestSQLite_Generate(t *testing.T) {
 	tests := []struct {
-		name   string
-		schema *sqlporter.Schema
-
+		name    string
+		schema  *sqlporter.Schema
+		want    string
 		wantErr bool
 	}{
 		{
@@ -95,22 +96,53 @@ func TestSQLite_Generate(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "Valid schema",
-			schema:  &sqlporter.Schema{}, // Assuming a valid schema object
+			name: "Basic schema with one table",
+			schema: &sqlporter.Schema{
+				Tables: []sqlporter.Table{
+					{
+						Name: "users",
+						Columns: []sqlporter.Column{
+							{Name: "id", DataType: "INTEGER", IsPrimaryKey: true},
+							{Name: "name", DataType: "TEXT", Length: 100, IsNullable: false},
+							{Name: "email", DataType: "TEXT", Length: 255, IsNullable: false, IsUnique: true},
+						},
+					},
+				},
+			},
+			want: strings.TrimSpace(`
+CREATE TABLE users (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE
+);`),
 			wantErr: false,
 		},
 		{
-			name:   "Complex schema with tables and views",
+			name: "Schema with table and indexes",
 			schema: &sqlporter.Schema{
-				// Define a complex schema with multiple tables and views
+				Tables: []sqlporter.Table{
+					{
+						Name: "products",
+						Columns: []sqlporter.Column{
+							{Name: "id", DataType: "INTEGER", IsPrimaryKey: true},
+							{Name: "name", DataType: "TEXT", Length: 100, IsNullable: false},
+							{Name: "price", DataType: "REAL", Length: 10, Scale: 2},
+						},
+						Indexes: []sqlporter.Index{
+							{Name: "idx_name", Columns: []string{"name"}},
+							{Name: "idx_price", Columns: []string{"price"}, IsUnique: true},
+						},
+					},
+				},
 			},
-			wantErr: false,
-		},
-		{
-			name:   "Schema with triggers",
-			schema: &sqlporter.Schema{
-				// Define a schema with triggers
-			},
+			want: strings.TrimSpace(`
+CREATE TABLE products (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    price REAL(10,2)
+);
+CREATE INDEX idx_name ON products(name);
+CREATE UNIQUE INDEX idx_price ON products(price);`),
 			wantErr: false,
 		},
 	}
@@ -118,9 +150,12 @@ func TestSQLite_Generate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := NewSQLite()
-			_, err := s.Generate(tt.schema)
+			result, err := s.Generate(tt.schema)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Generate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.want != "" {
+				assert.Equal(t, tt.want, strings.TrimSpace(result))
 			}
 		})
 	}
