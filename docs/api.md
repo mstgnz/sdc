@@ -11,7 +11,7 @@
 
 ### NewParser
 
-Creates a new parser.
+Creates a new 
 
 ```go
 func NewParser(dialect string) (Parser, error)

@@ -27,7 +27,7 @@ To convert SQLite dump file:
 parser := sqlporter.NewSQLiteParser()
 
 // Parse SQLite dump
-entity, err := parser.Parse(sqliteDump)
+entity, err := Parse(sqliteDump)
 if err != nil {
     log.Error("Parse error", err)
     return

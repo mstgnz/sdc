@@ -8,12 +8,13 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/mstgnz/sqlporter/parser"
+	"github.com/mstgnz/sqlporter/statement"
+	"github.com/mstgnz/sqlporter/worker"
 )
 
 type SQLTask struct {
 	id        string
-	statement *parser.Statement
+	statement *statement.Statement
 	timeout   time.Duration
 }
 
@@ -28,7 +29,7 @@ func main() {
 	defer cancel()
 
 	// Initialize worker pool
-	wp := parser.NewWorkerPool(4, 1000)
+	wp := worker.NewWorkerPool(4, 1000)
 
 	// Start worker pool
 	wp.Start(ctx)
@@ -40,7 +41,7 @@ func main() {
 	}
 }
 
-func processFiles(_ context.Context, dir string, wp *parser.WorkerPool) error {
+func processFiles(_ context.Context, dir string, wp *worker.WorkerPool) error {
 	// Walk through directory
 	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -64,7 +65,7 @@ func processFiles(_ context.Context, dir string, wp *parser.WorkerPool) error {
 		}
 
 		// Create statement
-		stmt := parser.NewStatement(string(content))
+		stmt := statement.NewStatement(string(content))
 
 		// Submit task to worker pool
 		task := &SQLTask{

@@ -50,7 +50,7 @@ package main
 import (
     "context"
     "fmt"
-    "github.com/mstgnz/sqlporter/parser"
+    
     "time"
 )
 
@@ -60,11 +60,11 @@ func main() {
     defer cancel()
 
     // Initialize parser with memory optimization
-    memOptimizer := parser.NewMemoryOptimizer(1024, 0.8) // 1GB max memory
+    memOptimizer := NewMemoryOptimizer(1024, 0.8) // 1GB max memory
     go memOptimizer.MonitorMemory(ctx)
 
     // Create PostgreSQL parser
-    postgresParser := parser.NewPostgresParser()
+    postgresParser := NewPostgresParser()
 
     // Parse SQL
     sql := `CREATE TABLE users (
@@ -88,7 +88,7 @@ func main() {
 ### Worker Pool
 
 ```go
-wp := parser.NewWorkerPool(parser.WorkerConfig{
+wp := NewWorkerPool(WorkerConfig{
     Workers:      4,
     QueueSize:    1000,
     MemOptimizer: memOptimizer,
@@ -104,7 +104,7 @@ defer wp.Stop()
 ### Batch Processing
 
 ```go
-bp := parser.NewBatchProcessor(parser.BatchConfig{
+bp := NewBatchProcessor(BatchConfig{
     BatchSize:    100,
     Workers:      4,
     Timeout:      30 * time.Second,
@@ -118,7 +118,7 @@ bp := parser.NewBatchProcessor(parser.BatchConfig{
 ### Stream Processing
 
 ```go
-sp := parser.NewStreamParser(parser.StreamParserConfig{
+sp := NewStreamParser(StreamParserConfig{
     Workers:      4,
     BatchSize:    1024 * 1024, // 1MB
     BufferSize:   32 * 1024,   // 32KB

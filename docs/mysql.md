@@ -31,7 +31,7 @@ MySQL dump dosyasını dönüştürmek için:
 parser := sqlporter.NewMySQLParser()
 
 // MySQL dump'ı parse et
-entity, err := parser.Parse(mysqlDump)
+entity, err := Parse(mysqlDump)
 if err != nil {
     log.Error("Parse hatası", err)
     return

@@ -13,7 +13,7 @@ Basic Usage:
 	parser := sqlporter.NewMySQLParser()
 
 	// Parse MySQL dump
-	entity, err := parser.Parse(mysqlDump)
+	entity, err := Parse(mysqlDump)
 	if err != nil {
 		// handle error
 	}

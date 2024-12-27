@@ -32,7 +32,7 @@ PostgreSQL dump dosyasını dönüştürmek için:
 parser := sqlporter.NewPostgresParser()
 
 // PostgreSQL dump'ı parse et
-entity, err := parser.Parse(pgDump)
+entity, err := Parse(pgDump)
 if err != nil {
     log.Error("Parse hatası", err)
     return
