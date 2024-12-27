@@ -705,7 +705,7 @@ func (m *MySQL) generateColumnSQL(column sqlporter.Column) string {
 	}
 	if column.IsPrimaryKey {
 		parts = append(parts, "PRIMARY KEY")
-	} else if !column.IsNullable && column.IsNullable != true {
+	} else if !column.IsNullable {
 		// Handle NOT NULL only if not PRIMARY KEY and explicitly set to false
 		parts = append(parts, "NOT NULL")
 	}
