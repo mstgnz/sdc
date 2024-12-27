@@ -126,7 +126,7 @@ CREATE TABLE users (
 						Columns: []sqlporter.Column{
 							{Name: "id", DataType: "INTEGER", IsPrimaryKey: true},
 							{Name: "name", DataType: "TEXT", Length: 100, IsNullable: false},
-							{Name: "price", DataType: "REAL", Length: 10, Scale: 2},
+							{Name: "price", DataType: "REAL", Length: 10, Scale: 2, IsNullable: true},
 						},
 						Indexes: []sqlporter.Index{
 							{Name: "idx_name", Columns: []string{"name"}},
