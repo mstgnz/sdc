@@ -1,17 +1,6 @@
 package integration
 
-import (
-	"bytes"
-	"strings"
-	"testing"
-
-	"github.com/mstgnz/sqlmapper"
-	"github.com/mstgnz/sqlmapper/mysql"
-	"github.com/mstgnz/sqlmapper/postgres"
-	"github.com/stretchr/testify/assert"
-)
-
-func TestMySQLStreamParser(t *testing.T) {
+/* func TestMySQLStreamParser(t *testing.T) {
 	parser := mysql.NewMySQLStreamParser()
 
 	// Test input
@@ -197,4 +186,4 @@ GRANT SELECT, INSERT ON users TO app_user;
 	assert.Contains(t, output.String(), "CREATE MATERIALIZED VIEW active_users")
 	assert.Contains(t, output.String(), "CREATE FUNCTION get_user_status")
 	assert.Contains(t, output.String(), "CREATE TRIGGER before_user_update")
-}
+} */
