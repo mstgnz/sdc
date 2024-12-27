@@ -479,10 +479,8 @@ func (p *PostgreSQL) parseColumn(def string) (sqlporter.Column, error) {
 				endIdx = len(defaultPart)
 			}
 			defaultValue := strings.TrimSpace(defaultPart[:endIdx])
-			// Remove trailing comma if exists
-			if strings.HasSuffix(defaultValue, ",") {
-				defaultValue = defaultValue[:len(defaultValue)-1]
-			}
+			// Remove trailing comma
+			defaultValue = strings.TrimSuffix(defaultValue, ",")
 			column.DefaultValue = defaultValue
 		}
 	}
