@@ -14,7 +14,6 @@ A high-performance SQL parser and converter library written in Go, designed to h
 - **High Performance**:
   - Memory-optimized processing
   - Concurrent execution with worker pools
-  - Batch processing capabilities
   - Streaming support for large files
 
 - **Advanced Parsing**:
@@ -22,6 +21,16 @@ A high-performance SQL parser and converter library written in Go, designed to h
   - ALTER TABLE operations
   - DROP TABLE commands
   - INDEX management
+  - CREATE FUNCTION
+  - CREATE PROCEDURE
+  - CREATE VIEW
+  - CREATE SEQUENCE
+  - CREATE TYPE
+  - CREATE EXTENSION
+  - CREATE TRIGGER
+  - CREATE INDEX
+  - CREATE CONSTRAINT
+  - INSERT statements
   - Constraints handling
   - Data type mappings
 
