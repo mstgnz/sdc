@@ -45,6 +45,7 @@ type Table struct {
 	Storage     *StorageClause
 	Temporary   bool
 	Comment     string
+	Options     string // Storage engine options (e.g., ENGINE=InnoDB, CHARSET=utf8mb4)
 }
 
 // Column represents a table column
