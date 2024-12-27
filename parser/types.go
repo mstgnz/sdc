@@ -86,18 +86,26 @@ func NewConverter() *Converter {
 
 // RegisterMapping registers a new type mapping
 func (c *Converter) RegisterMapping(mapping TypeMapping) {
-	key := fmt.Sprintf("%s_%s", mapping.SourceType, mapping.TargetType)
-	c.typeMappings[key] = append(c.typeMappings[key], mapping)
+	if c.typeMappings == nil {
+		c.typeMappings = make(map[string][]TypeMapping)
+	}
+	c.typeMappings[mapping.SourceType] = []TypeMapping{mapping}
 }
 
 // RegisterCharSet registers a new character set
 func (c *Converter) RegisterCharSet(charset CharSet) {
-	c.charSets[strings.ToUpper(charset.Name)] = charset
+	if c.charSets == nil {
+		c.charSets = make(map[string]CharSet)
+	}
+	c.charSets[charset.Name] = charset
 }
 
 // RegisterCollation registers a new collation
 func (c *Converter) RegisterCollation(collation CollationConfig) {
-	c.collations[strings.ToUpper(collation.Name)] = collation
+	if c.collations == nil {
+		c.collations = make(map[string]CollationConfig)
+	}
+	c.collations[collation.Name] = collation
 }
 
 // ConvertType converts a value from one type to another
