@@ -1,8 +1,13 @@
-# Build aşaması
+# Build stage
 FROM golang:1.23-bullseye AS builder
 
-# Install the necessary build tools
-RUN apt-get update && apt-get install -y git
+# Install necessary build tools
+RUN apt-get update && apt-get install -y \
+    git \
+    gcc \
+    g++ \
+    sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
@@ -15,18 +20,27 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o sqlmapper .
+RUN CGO_ENABLED=1 GOOS=linux go build -o sqlmapper ./cmd/sqlmapper
 
-# Run stage
+# Final stage
 FROM debian:bullseye-slim
 
-# Install necessary packages for SSL certificates
-RUN apt-get update && apt-get install -y ca-certificates
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /root/
+WORKDIR /app
 
-# Copy the built application from the builder stage
+# Copy the built application from builder stage
 COPY --from=builder /app/sqlmapper .
+COPY --from=builder /app/examples ./examples
+
+# Set environment variables
+ENV PATH="/app:${PATH}"
+ENV SQLMAPPER_LOG_LEVEL=info
 
 # Run the application
-CMD ["./sqlmapper"] 
+ENTRYPOINT ["./sqlmapper"]
+CMD ["--help"] 
