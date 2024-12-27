@@ -144,26 +144,26 @@ var (
 
 // RegisterDefaultMappings registers default type mappings
 func (c *Converter) RegisterDefaultMappings() {
-	// Register MySQL to PostgreSQL mappings
-	for _, m := range MySQLToPostgresMappings {
-		c.RegisterMapping(m)
+	// MySQL -> PostgreSQL eşlemeleri
+	for _, mapping := range MySQLToPostgresMappings {
+		c.RegisterMapping(mapping)
 	}
 
-	// Register PostgreSQL to MySQL mappings
-	for _, m := range PostgresToMySQLMappings {
-		c.RegisterMapping(m)
+	// PostgreSQL -> MySQL eşlemeleri
+	for _, mapping := range PostgresToMySQLMappings {
+		c.RegisterMapping(mapping)
 	}
 
-	// Register SQLite mappings
-	for _, m := range SQLiteMappings {
-		c.RegisterMapping(m)
+	// SQLite eşlemeleri
+	for _, mapping := range SQLiteMappings {
+		c.RegisterMapping(mapping)
 	}
 
-	// Register default character sets
+	// Varsayılan karakter setlerini kaydet
 	c.RegisterCharSet(DefaultUTF8MB4)
 	c.RegisterCharSet(DefaultLatin1)
 
-	// Register default collations
+	// Varsayılan karşılaştırmaları kaydet
 	c.RegisterCollation(DefaultUTF8MB4Unicode)
 	c.RegisterCollation(DefaultUTF8MB4Bin)
 }
