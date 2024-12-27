@@ -81,43 +81,59 @@ func (p *PostgreSQL) Generate(schema *sqlporter.Schema) (string, error) {
 
 	var result strings.Builder
 
-	// Generate schema creation
 	for _, table := range schema.Tables {
-		if table.Schema != "" {
-			result.WriteString(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s;\n\n", table.Schema))
-		}
-	}
+		result.WriteString("CREATE TABLE ")
+		result.WriteString(table.Name)
+		result.WriteString(" (\n")
 
-	// Generate table creation
-	for _, table := range schema.Tables {
-		result.WriteString(p.generateTableSQL(table))
-		result.WriteString("\n\n")
-	}
+		for i, col := range table.Columns {
+			result.WriteString("    ")
+			result.WriteString(col.Name)
+			result.WriteString(" ")
 
-	// Generate indexes
-	for _, table := range schema.Tables {
-		for _, index := range table.Indexes {
-			result.WriteString(p.generateIndexSQL(table.Name, index))
+			if col.IsPrimaryKey && col.DataType == "SERIAL" {
+				result.WriteString("SERIAL PRIMARY KEY")
+			} else {
+				result.WriteString(col.DataType)
+				if col.Length > 0 {
+					result.WriteString(fmt.Sprintf("(%d", col.Length))
+					if col.Scale > 0 {
+						result.WriteString(fmt.Sprintf(",%d", col.Scale))
+					}
+					result.WriteString(")")
+				}
+
+				if !col.IsNullable {
+					result.WriteString(" NOT NULL")
+				}
+
+				if col.IsUnique {
+					result.WriteString(" UNIQUE")
+				}
+			}
+
+			if i < len(table.Columns)-1 {
+				result.WriteString(",")
+			}
 			result.WriteString("\n")
 		}
-	}
 
-	// Generate views
-	for _, view := range schema.Views {
-		result.WriteString(p.generateViewSQL(view))
-		result.WriteString("\n\n")
-	}
+		result.WriteString(");\n")
 
-	// Generate functions
-	for _, function := range schema.Functions {
-		result.WriteString(p.generateFunctionSQL(function))
-		result.WriteString("\n\n")
-	}
-
-	// Generate triggers
-	for _, trigger := range schema.Triggers {
-		result.WriteString(p.generateTriggerSQL(trigger))
-		result.WriteString("\n\n")
+		// Add indexes
+		for _, idx := range table.Indexes {
+			if idx.IsUnique {
+				result.WriteString("CREATE UNIQUE INDEX ")
+			} else {
+				result.WriteString("CREATE INDEX ")
+			}
+			result.WriteString(idx.Name)
+			result.WriteString(" ON ")
+			result.WriteString(table.Name)
+			result.WriteString("(")
+			result.WriteString(strings.Join(idx.Columns, ", "))
+			result.WriteString(");\n")
+		}
 	}
 
 	return result.String(), nil
@@ -434,7 +450,7 @@ func (p *PostgreSQL) parseColumn(def string) (sqlporter.Column, error) {
 	column := sqlporter.Column{
 		Name:       parts[0],
 		DataType:   parts[1],
-		IsNullable: !strings.Contains(strings.ToUpper(def), "NOT NULL"),
+		IsNullable: true,
 	}
 
 	// Handle SERIAL type
@@ -914,7 +930,11 @@ func (p *PostgreSQL) generateColumnSQL(column sqlporter.Column) string {
 
 	// Handle SERIAL type
 	if column.AutoIncrement {
-		parts = append(parts, "SERIAL")
+		if column.IsPrimaryKey {
+			parts = append(parts, "SERIAL PRIMARY KEY")
+		} else {
+			parts = append(parts, "SERIAL")
+		}
 	} else {
 		// Data type with length/precision
 		if column.Length > 0 {
@@ -926,10 +946,10 @@ func (p *PostgreSQL) generateColumnSQL(column sqlporter.Column) string {
 		} else {
 			parts = append(parts, column.DataType)
 		}
-	}
 
-	if !column.IsNullable && !column.AutoIncrement {
-		parts = append(parts, "NOT NULL")
+		if !column.IsNullable {
+			parts = append(parts, "NOT NULL")
+		}
 	}
 
 	if column.DefaultValue != "" && !column.AutoIncrement {
@@ -940,6 +960,10 @@ func (p *PostgreSQL) generateColumnSQL(column sqlporter.Column) string {
 		} else {
 			parts = append(parts, "DEFAULT", fmt.Sprintf("'%s'", column.DefaultValue))
 		}
+	}
+
+	if column.IsUnique && !column.IsPrimaryKey {
+		parts = append(parts, "UNIQUE")
 	}
 
 	return strings.Join(parts, " ")
