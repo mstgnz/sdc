@@ -122,14 +122,10 @@ differences := comparer.Compare()
 ### Prerequisites
 
 - Go 1.16 or higher
-- Docker (for running test databases)
 
 ### Running Tests
 
 ```bash
-# Start test databases
-docker-compose up -d
-
 # Run tests
 go test ./...
 ```
