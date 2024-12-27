@@ -32,8 +32,10 @@ func TestNewBatchProcessor(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			processor := NewBatchProcessor(tt.config)
 			if processor == nil {
-				t.Error("Expected non-nil BatchProcessor")
+				t.Fatal("Expected non-nil BatchProcessor")
+				return
 			}
+
 			if processor.batchSize == 0 {
 				t.Error("Expected non-zero batch size")
 			}

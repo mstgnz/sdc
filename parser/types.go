@@ -6,15 +6,33 @@ import (
 )
 
 // DataType represents supported database types
-type DataType string
+type DataType int
 
 const (
-	TypeMySQL      DataType = "mysql"
-	TypePostgreSQL DataType = "postgresql"
-	TypeSQLite     DataType = "sqlite"
-	TypeOracle     DataType = "oracle"
-	TypeSQLServer  DataType = "sqlserver"
+	TypeMySQL DataType = iota
+	TypePostgreSQL
+	TypeSQLite
+	TypeOracle
+	TypeSQLServer
 )
+
+// String returns string representation of DataType
+func (dt DataType) String() string {
+	switch dt {
+	case TypeMySQL:
+		return "mysql"
+	case TypePostgreSQL:
+		return "postgresql"
+	case TypeSQLite:
+		return "sqlite"
+	case TypeOracle:
+		return "oracle"
+	case TypeSQLServer:
+		return "sqlserver"
+	default:
+		return "unknown"
+	}
+}
 
 // Version represents a database version
 type Version struct {

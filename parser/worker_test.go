@@ -30,8 +30,10 @@ func TestNewWorkerPool(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			pool := NewWorkerPool(tt.config)
 			if pool == nil {
-				t.Error("Expected non-nil WorkerPool")
+				t.Fatal("Expected non-nil WorkerPool")
+				return
 			}
+
 			if pool.workers == 0 {
 				t.Error("Expected non-zero workers")
 			}

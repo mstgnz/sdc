@@ -210,7 +210,7 @@ func (tc *TypeConverter) initializeTypeMaps() {
 }
 
 // addMapping adds type mappings for a specific source and target dialect
-func (tc *TypeConverter) addMapping(source, target string, mappings map[string]string) {
+func (tc *TypeConverter) addMapping(source, _ string, mappings map[string]string) {
 	if _, exists := tc.typeMap[source]; !exists {
 		tc.typeMap[source] = make(map[string]string)
 	}

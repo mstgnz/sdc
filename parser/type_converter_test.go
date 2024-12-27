@@ -31,8 +31,10 @@ func TestNewTypeConverter(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			converter := NewTypeConverter(tt.sourceDialect, tt.targetDialect)
 			if converter == nil {
-				t.Error("Expected non-nil TypeConverter")
+				t.Fatal("Expected non-nil TypeConverter")
+				return
 			}
+
 			if converter.sourceDialect != tt.sourceDialect {
 				t.Errorf("Expected source dialect %s, got %s", tt.sourceDialect, converter.sourceDialect)
 			}

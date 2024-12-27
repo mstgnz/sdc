@@ -92,8 +92,8 @@ var DatabaseInfoMap = map[DatabaseType]DatabaseInfo{
 	},
 }
 
-// sanitizeString removes potentially dangerous characters from a string
-func sanitizeString(s string) string {
+// SanitizeString removes potentially dangerous characters from a string
+func SanitizeString(s string) string {
 	dangerous := []string{"'", "\"", ";", "--", "/*", "*/", "@@", "@"}
 	result := s
 	for _, ch := range dangerous {
@@ -102,15 +102,15 @@ func sanitizeString(s string) string {
 	return result
 }
 
-// logSensitiveData logs potentially sensitive data if logging is enabled
-func logSensitiveData(data string, options SecurityOptions) {
+// LogSensitiveData logs potentially sensitive data if logging is enabled
+func LogSensitiveData(data string, options SecurityOptions) {
 	if options.LogSensitiveData {
 		fmt.Printf("Warning: Potentially sensitive data found: %s\n", data)
 	}
 }
 
-// validateIdentifierSafety checks if an identifier is safe to use
-func validateIdentifierSafety(name string, options SecurityOptions) error {
+// ValidateIdentifierSafety checks if an identifier is safe to use
+func ValidateIdentifierSafety(name string, options SecurityOptions) error {
 	if name == "" {
 		return fmt.Errorf("empty identifier name")
 	}
@@ -142,8 +142,8 @@ func validateIdentifierSafety(name string, options SecurityOptions) error {
 	return nil
 }
 
-// validateQuerySafety performs security checks on SQL queries
-func validateQuerySafety(sql string, options SecurityOptions) error {
+// ValidateQuerySafety performs security checks on SQL queries
+func ValidateQuerySafety(sql string, options SecurityOptions) error {
 	if sql == "" {
 		return fmt.Errorf("empty SQL query")
 	}
@@ -204,12 +204,23 @@ type Table struct {
 	Constraints []*Constraint
 	PrimaryKey  *Constraint
 	ForeignKeys []*Constraint
+	Options     *TableOptions
+	Collation   string
+	Comment     string
+}
+
+// ColumnType represents a database column type
+type ColumnType struct {
+	Name      string
+	Length    int
+	Precision int
+	Scale     int
 }
 
 // Column represents a table column
 type Column struct {
 	Name          string
-	DataType      *DataType
+	DataType      *ColumnType
 	IsNullable    bool
 	Nullable      bool
 	Default       string
@@ -217,6 +228,7 @@ type Column struct {
 	PrimaryKey    bool
 	Unique        bool
 	Collation     string
+	Comment       string
 }
 
 // Constraint represents a table constraint
@@ -287,4 +299,42 @@ type MigrationStatus struct {
 	Version   string
 	AppliedAt string
 	Status    string
+}
+
+// AlterTable represents an ALTER TABLE statement
+type AlterTable struct {
+	Schema string
+	Table  string
+	Action string
+}
+
+// DropTable represents a DROP TABLE statement
+type DropTable struct {
+	Schema string
+	Table  string
+}
+
+// Index represents a database index
+type Index struct {
+	Schema   string
+	Table    string
+	Name     string
+	Columns  []string
+	IsUnique bool
+	Type     string
+}
+
+// DropIndex represents a DROP INDEX statement
+type DropIndex struct {
+	Schema string
+	Table  string
+	Name   string
+}
+
+// TableOptions represents additional table options
+type TableOptions struct {
+	Engine    string
+	Charset   string
+	Collation string
+	Comment   string
 }

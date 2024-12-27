@@ -3,7 +3,6 @@ package parser
 import (
 	"context"
 	"errors"
-	"fmt"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -63,7 +62,7 @@ type WorkerPool struct {
 	wg            sync.WaitGroup
 	activeWorkers int32
 	taskCount     int32
-	mu            sync.RWMutex
+	_             sync.RWMutex
 	metrics       *WorkerMetrics
 }
 
@@ -195,11 +194,13 @@ func (wp *WorkerPool) processTask(ctx context.Context, task Task) Result {
 
 	// Create task context with timeout
 	taskCtx := ctx
+	var cancel context.CancelFunc
 	if task.Timeout > 0 {
-		var cancel context.CancelFunc
 		taskCtx, cancel = context.WithTimeout(ctx, task.Timeout)
-		defer cancel()
+	} else {
+		taskCtx, cancel = context.WithCancel(ctx)
 	}
+	defer cancel()
 
 	// Get buffer from memory optimizer if available
 	if wp.memOptimizer != nil {
@@ -209,27 +210,54 @@ func (wp *WorkerPool) processTask(ctx context.Context, task Task) Result {
 
 	// Execute task with timeout
 	done := make(chan struct{})
+	errCh := make(chan error, 1)
+	dataCh := make(chan interface{}, 1)
+
 	go func() {
 		defer close(done)
 		atomic.StoreInt32((*int32)(&task.Status), int32(TaskRunning))
+
 		if res, err := executeStatement(task.Statement); err != nil {
-			result.Error = err
+			errCh <- err
 			atomic.StoreInt32((*int32)(&task.Status), int32(TaskFailed))
 		} else {
-			result.Data = res
+			dataCh <- res
 			atomic.StoreInt32((*int32)(&task.Status), int32(TaskCompleted))
 		}
 	}()
 
 	select {
 	case <-taskCtx.Done():
-		result.Error = fmt.Errorf("task timeout: %w", taskCtx.Err())
+		if taskCtx.Err() == context.DeadlineExceeded {
+			result.Error = ErrTaskTimeout
+		} else {
+			result.Error = taskCtx.Err()
+		}
 		atomic.StoreInt32((*int32)(&task.Status), int32(TaskFailed))
+		if wp.errHandler != nil {
+			wp.errHandler(result.Error)
+		}
+	case err := <-errCh:
+		result.Error = err
+		if wp.errHandler != nil {
+			wp.errHandler(err)
+		}
+	case data := <-dataCh:
+		result.Data = data
 	case <-done:
+		// Task completed without data or error
 	}
 
 	result.EndTime = time.Now()
 	result.Duration = result.EndTime.Sub(result.StartTime)
+
+	// Update metrics
+	if result.Error != nil {
+		atomic.AddInt32(&wp.metrics.FailedTasks, 1)
+	} else {
+		atomic.AddInt32(&wp.metrics.CompletedTasks, 1)
+	}
+
 	return result
 }
 
@@ -278,7 +306,7 @@ func (wp *WorkerPool) WaitForTasks(ctx context.Context) error {
 }
 
 // executeStatement executes a SQL statement
-func executeStatement(stmt *Statement) (interface{}, error) {
+func executeStatement(_ *Statement) (interface{}, error) {
 	// Implementation depends on the statement type
 	// This is just a placeholder
 	return nil, nil

@@ -76,7 +76,8 @@ func NewStreamParser(config StreamParserConfig) *StreamParser {
 		maxRetries: config.MaxRetries,
 		bufferPool: &sync.Pool{
 			New: func() interface{} {
-				return make([]byte, config.BatchSize)
+				b := make([]byte, config.BatchSize)
+				return &b
 			},
 		},
 		errorHandler: config.ErrorHandler,
@@ -220,7 +221,7 @@ func (sp *StreamParser) getBuffer() []byte {
 	if sp.memOptimizer != nil {
 		return sp.memOptimizer.GetBuffer()
 	}
-	return sp.bufferPool.Get().([]byte)
+	return *sp.bufferPool.Get().(*[]byte)
 }
 
 // putBuffer returns a buffer to the pool
@@ -229,7 +230,7 @@ func (sp *StreamParser) putBuffer(buf []byte) {
 		sp.memOptimizer.PutBuffer(buf)
 		return
 	}
-	sp.bufferPool.Put(buf)
+	sp.bufferPool.Put(&buf)
 }
 
 // isTemporaryError checks if an error is temporary

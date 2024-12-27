@@ -75,24 +75,27 @@ func (bp *BatchProcessor) ProcessBatch(ctx context.Context, stmts []*Statement, 
 	ctx, cancel := context.WithTimeout(ctx, bp.timeout)
 	defer cancel()
 
+	// Create channels
+	errChan := make(chan error, 1)
+	taskChan := make(chan *Statement, bp.batchSize)
+
+	// Create wait group for workers
 	var wg sync.WaitGroup
-	errChan := make(chan error, bp.workers)
+	wg.Add(bp.workers)
 
-	// Start worker pool
+	// Start workers
 	for i := 0; i < bp.workers; i++ {
-		wg.Add(1)
-
 		go func() {
 			defer wg.Done()
 			for {
 				select {
 				case <-ctx.Done():
 					return
-				case stmt, ok := <-bp.queue:
+				case stmt, ok := <-taskChan:
 					if !ok {
 						return
 					}
-					if err := bp.processStatement(ctx, stmt, handler); err != nil {
+					if err := handler(stmt); err != nil {
 						select {
 						case errChan <- err:
 						default:
@@ -105,34 +108,37 @@ func (bp *BatchProcessor) ProcessBatch(ctx context.Context, stmts []*Statement, 
 		}()
 	}
 
-	// Send statements to workers
-	for _, stmt := range stmts {
-		select {
-		case <-ctx.Done():
-			close(bp.queue)
-			return ctx.Err()
-		case bp.queue <- stmt:
-		case err := <-errChan:
-			close(bp.queue)
-			return err
+	// Send tasks
+	go func() {
+		defer close(taskChan)
+		for _, stmt := range stmts {
+			select {
+			case <-ctx.Done():
+				return
+			case taskChan <- stmt:
+			}
 		}
-	}
+	}()
 
-	close(bp.queue)
-	wg.Wait()
+	// Wait for completion or error
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
 
 	select {
-	case err := <-errChan:
-		return err
 	case <-ctx.Done():
 		return ctx.Err()
-	default:
+	case err := <-errChan:
+		return err
+	case <-done:
 		return nil
 	}
 }
 
-// processStatement processes a single statement with memory optimization
-func (bp *BatchProcessor) processStatement(ctx context.Context, stmt *Statement, handler func(*Statement) error) error {
+// ProcessStatement processes a single statement with memory optimization
+func (bp *BatchProcessor) ProcessStatement(ctx context.Context, stmt *Statement, handler func(*Statement) error) error {
 	// Acquire worker from pool
 	select {
 	case bp.workerPool <- struct{}{}:

@@ -212,8 +212,20 @@ func TestSQLiteMappings(t *testing.T) {
 			if !tt.expectError && err != nil {
 				t.Errorf("Expected no error but got: %v", err)
 			}
-			if !tt.expectError && result != tt.expected {
-				t.Errorf("Expected %v but got %v", tt.expected, result)
+			if !tt.expectError {
+				switch v := result.(type) {
+				case []byte:
+					expected, ok := tt.expected.([]byte)
+					if !ok {
+						t.Errorf("Expected []byte but got %T", tt.expected)
+					} else if string(v) != string(expected) {
+						t.Errorf("Expected %v but got %v", string(expected), string(v))
+					}
+				default:
+					if result != tt.expected {
+						t.Errorf("Expected %v but got %v", tt.expected, result)
+					}
+				}
 			}
 		})
 	}

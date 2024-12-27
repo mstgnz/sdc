@@ -37,7 +37,8 @@ func NewMemoryOptimizer(maxMemoryMB int64, gcThreshold float64) *MemoryOptimizer
 		monitorTicker: time.Second,
 		bufferPool: &sync.Pool{
 			New: func() interface{} {
-				return make([]byte, 32*1024) // 32KB default buffer size
+				b := make([]byte, 32*1024) // 32KB default buffer size
+				return &b
 			},
 		},
 		statsCollector: &sync.Map{},
@@ -95,7 +96,7 @@ func (mo *MemoryOptimizer) MonitorMemory(ctx context.Context) {
 
 // GetBuffer gets a buffer from the pool
 func (mo *MemoryOptimizer) GetBuffer() []byte {
-	return mo.bufferPool.Get().([]byte)
+	return *mo.bufferPool.Get().(*[]byte)
 }
 
 // PutBuffer returns a buffer to the pool
@@ -104,7 +105,7 @@ func (mo *MemoryOptimizer) PutBuffer(buf []byte) {
 	for i := range buf {
 		buf[i] = 0
 	}
-	mo.bufferPool.Put(buf)
+	mo.bufferPool.Put(&buf)
 }
 
 // GetStats returns current memory statistics

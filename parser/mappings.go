@@ -78,7 +78,11 @@ var (
 			TargetType: "datetime",
 			ConversionFunc: func(v interface{}) (interface{}, error) {
 				if str, ok := v.(string); ok {
-					return time.Parse("2006-01-02 15:04:05.999999-07", str)
+					t, err := time.Parse("2006-01-02 15:04:05.999999-07", str)
+					if err != nil {
+						return nil, err
+					}
+					return t.UTC(), nil
 				}
 				return v, nil
 			},

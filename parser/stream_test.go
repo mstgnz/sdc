@@ -35,8 +35,10 @@ func TestNewStreamParser(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			parser := NewStreamParser(tt.config)
 			if parser == nil {
-				t.Error("Expected non-nil StreamParser")
+				t.Fatal("Expected non-nil StreamParser")
+				return
 			}
+
 			if parser.workers == 0 {
 				t.Error("Expected non-zero workers")
 			}

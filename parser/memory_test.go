@@ -28,8 +28,10 @@ func TestNewMemoryOptimizer(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			optimizer := NewMemoryOptimizer(tt.maxMemoryMB, tt.gcThreshold)
 			if optimizer == nil {
-				t.Error("Expected non-nil MemoryOptimizer")
+				t.Fatal("Expected non-nil MemoryOptimizer")
+				return
 			}
+
 			if optimizer.maxMemory != tt.maxMemoryMB*1024*1024 {
 				t.Errorf("Expected max memory %d, got %d", tt.maxMemoryMB*1024*1024, optimizer.maxMemory)
 			}
