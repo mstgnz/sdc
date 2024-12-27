@@ -5,22 +5,22 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mstgnz/sqlporter"
+	"github.com/mstgnz/sqlmapper"
 )
 
 type SQLServer struct {
-	schema *sqlporter.Schema
+	schema *sqlmapper.Schema
 }
 
 // NewSQLServer creates a new SQLServer parser instance
 func NewSQLServer() *SQLServer {
 	return &SQLServer{
-		schema: &sqlporter.Schema{},
+		schema: &sqlmapper.Schema{},
 	}
 }
 
 // Parse parses SQLServer dump content
-func (s *SQLServer) Parse(content string) (*sqlporter.Schema, error) {
+func (s *SQLServer) Parse(content string) (*sqlmapper.Schema, error) {
 	if content == "" {
 		return nil, errors.New("empty content")
 	}
@@ -30,7 +30,7 @@ func (s *SQLServer) Parse(content string) (*sqlporter.Schema, error) {
 }
 
 // Generate generates SQLServer dump from schema
-func (s *SQLServer) Generate(schema *sqlporter.Schema) (string, error) {
+func (s *SQLServer) Generate(schema *sqlmapper.Schema) (string, error) {
 	if schema == nil {
 		return "", errors.New("empty schema")
 	}

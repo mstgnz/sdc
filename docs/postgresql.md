@@ -29,7 +29,7 @@ PostgreSQL dump dosyasını dönüştürmek için:
 
 ```go
 // PostgreSQL parser oluştur
-parser := sqlporter.NewPostgresParser()
+parser := sqlmapper.NewPostgresParser()
 
 // PostgreSQL dump'ı parse et
 entity, err := Parse(pgDump)
@@ -39,7 +39,7 @@ if err != nil {
 }
 
 // MySQL'e dönüştür
-mysqlParser := sqlporter.NewMySQLParser()
+mysqlParser := sqlmapper.NewMySQLParser()
 mysqlSQL, err := mysqlParser.Convert(entity)
 if err != nil {
     log.Error("Dönüştürme hatası", err)

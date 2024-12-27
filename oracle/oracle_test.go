@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mstgnz/sqlporter"
+	"github.com/mstgnz/sqlmapper"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -13,7 +13,7 @@ func TestOracle_Parse(t *testing.T) {
 		name     string
 		content  string
 		wantErr  bool
-		validate func(*testing.T, *sqlporter.Schema)
+		validate func(*testing.T, *sqlmapper.Schema)
 	}{
 		{
 			name:    "Empty content",
@@ -44,7 +44,7 @@ func TestOracle_Parse(t *testing.T) {
 					CONSTRAINT fk_posts_users FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 				);`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				assert.Len(t, schema.Tables, 2)
 
 				// Users tablosu kontrolü
@@ -78,7 +78,7 @@ func TestOracle_Parse(t *testing.T) {
 				CREATE SEQUENCE users_seq START WITH 1 INCREMENT BY 1;
 				CREATE SEQUENCE posts_seq START WITH 1 INCREMENT BY 1;`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				assert.Len(t, schema.Sequences, 2)
 				assert.Equal(t, "users_seq", schema.Sequences[0].Name)
 				assert.Equal(t, "posts_seq", schema.Sequences[1].Name)
@@ -97,7 +97,7 @@ func TestOracle_Parse(t *testing.T) {
 				WHERE u.status = 'active'
 				GROUP BY u.id, u.username, u.email, u.password, u.status, u.created_at, u.updated_at;`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				assert.Len(t, schema.Views, 1)
 				assert.Equal(t, "active_users_view", schema.Views[0].Name)
 			},
@@ -121,7 +121,7 @@ func TestOracle_Parse(t *testing.T) {
 				END;
 				/`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				assert.Len(t, schema.Triggers, 2)
 
 				// Users trigger kontrolü
@@ -162,7 +162,7 @@ func TestOracle_Parse(t *testing.T) {
 func TestOracle_Generate(t *testing.T) {
 	tests := []struct {
 		name    string
-		schema  *sqlporter.Schema
+		schema  *sqlmapper.Schema
 		want    string
 		wantErr bool
 	}{
@@ -173,11 +173,11 @@ func TestOracle_Generate(t *testing.T) {
 		},
 		{
 			name: "Basic schema with one table",
-			schema: &sqlporter.Schema{
-				Tables: []sqlporter.Table{
+			schema: &sqlmapper.Schema{
+				Tables: []sqlmapper.Table{
 					{
 						Name: "users",
-						Columns: []sqlporter.Column{
+						Columns: []sqlmapper.Column{
 							{Name: "id", DataType: "NUMBER", IsPrimaryKey: true},
 							{Name: "username", DataType: "VARCHAR2", Length: 50, IsNullable: false, IsUnique: true},
 							{Name: "email", DataType: "VARCHAR2", Length: 100, IsNullable: false},
@@ -195,16 +195,16 @@ CREATE TABLE users (
 		},
 		{
 			name: "Schema with table and indexes",
-			schema: &sqlporter.Schema{
-				Tables: []sqlporter.Table{
+			schema: &sqlmapper.Schema{
+				Tables: []sqlmapper.Table{
 					{
 						Name: "products",
-						Columns: []sqlporter.Column{
+						Columns: []sqlmapper.Column{
 							{Name: "id", DataType: "NUMBER", IsPrimaryKey: true},
 							{Name: "name", DataType: "VARCHAR2", Length: 100, IsNullable: false},
 							{Name: "price", DataType: "NUMBER", Length: 10, Scale: 2, IsNullable: true},
 						},
-						Indexes: []sqlporter.Index{
+						Indexes: []sqlmapper.Index{
 							{Name: "idx_name", Columns: []string{"name"}},
 							{Name: "idx_price", Columns: []string{"price"}, IsUnique: true},
 						},
@@ -223,11 +223,11 @@ CREATE UNIQUE INDEX idx_price ON products(price);`),
 		},
 		{
 			name: "Full schema",
-			schema: &sqlporter.Schema{
-				Tables: []sqlporter.Table{
+			schema: &sqlmapper.Schema{
+				Tables: []sqlmapper.Table{
 					{
 						Name: "users",
-						Columns: []sqlporter.Column{
+						Columns: []sqlmapper.Column{
 							{Name: "id", DataType: "NUMBER", IsPrimaryKey: true},
 							{Name: "username", DataType: "VARCHAR2", Length: 50, IsNullable: false, IsUnique: true},
 							{Name: "email", DataType: "VARCHAR2", Length: 100, IsNullable: false},
@@ -235,7 +235,7 @@ CREATE UNIQUE INDEX idx_price ON products(price);`),
 						},
 					},
 				},
-				Views: []sqlporter.View{
+				Views: []sqlmapper.View{
 					{
 						Name:       "active_users_view",
 						Definition: "SELECT u.*, COUNT(p.id) as post_count FROM users u LEFT JOIN posts p ON u.id = p.user_id WHERE u.status = 'active' GROUP BY u.id",

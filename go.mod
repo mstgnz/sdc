@@ -1,4 +1,4 @@
-module github.com/mstgnz/sqlporter
+module github.com/mstgnz/sqlmapper
 
 go 1.23
 

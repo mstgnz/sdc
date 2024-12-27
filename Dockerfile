@@ -15,7 +15,7 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o sqlporter .
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o sqlmapper .
 
 # Run stage
 FROM debian:bullseye-slim
@@ -26,7 +26,7 @@ RUN apt-get update && apt-get install -y ca-certificates
 WORKDIR /root/
 
 # Copy the built application from the builder stage
-COPY --from=builder /app/sqlporter .
+COPY --from=builder /app/sqlmapper .
 
 # Run the application
-CMD ["./sqlporter"] 
+CMD ["./sqlmapper"] 

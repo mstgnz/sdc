@@ -24,7 +24,7 @@ To convert SQLite dump file:
 
 ```go
 // Create SQLite parser
-parser := sqlporter.NewSQLiteParser()
+parser := sqlmapper.NewSQLiteParser()
 
 // Parse SQLite dump
 entity, err := Parse(sqliteDump)
@@ -34,7 +34,7 @@ if err != nil {
 }
 
 // Convert to PostgreSQL
-pgParser := sqlporter.NewPostgresParser()
+pgParser := sqlmapper.NewPostgresParser()
 pgSQL, err := pgParser.Convert(entity)
 if err != nil {
     log.Error("Conversion error", err)

@@ -5,22 +5,22 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mstgnz/sqlporter"
+	"github.com/mstgnz/sqlmapper"
 )
 
 type SQLite struct {
-	schema *sqlporter.Schema
+	schema *sqlmapper.Schema
 }
 
 // NewSQLite creates a new SQLite parser instance
 func NewSQLite() *SQLite {
 	return &SQLite{
-		schema: &sqlporter.Schema{},
+		schema: &sqlmapper.Schema{},
 	}
 }
 
 // Parse parses SQLite dump content
-func (s *SQLite) Parse(content string) (*sqlporter.Schema, error) {
+func (s *SQLite) Parse(content string) (*sqlmapper.Schema, error) {
 	if content == "" {
 		return nil, errors.New("empty content")
 	}
@@ -30,7 +30,7 @@ func (s *SQLite) Parse(content string) (*sqlporter.Schema, error) {
 }
 
 // Generate generates SQLite dump from schema
-func (s *SQLite) Generate(schema *sqlporter.Schema) (string, error) {
+func (s *SQLite) Generate(schema *sqlmapper.Schema) (string, error) {
 	if schema == nil {
 		return "", errors.New("empty schema")
 	}

@@ -6,22 +6,22 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/mstgnz/sqlporter"
+	"github.com/mstgnz/sqlmapper"
 )
 
 type PostgreSQL struct {
-	schema *sqlporter.Schema
+	schema *sqlmapper.Schema
 }
 
 // NewPostgreSQL creates a new PostgreSQL parser instance
 func NewPostgreSQL() *PostgreSQL {
 	return &PostgreSQL{
-		schema: &sqlporter.Schema{},
+		schema: &sqlmapper.Schema{},
 	}
 }
 
 // Parse parses PostgreSQL dump content
-func (p *PostgreSQL) Parse(content string) (*sqlporter.Schema, error) {
+func (p *PostgreSQL) Parse(content string) (*sqlmapper.Schema, error) {
 	if content == "" {
 		return nil, errors.New("empty content")
 	}
@@ -74,7 +74,7 @@ func (p *PostgreSQL) Parse(content string) (*sqlporter.Schema, error) {
 }
 
 // Generate generates PostgreSQL dump from schema
-func (p *PostgreSQL) Generate(schema *sqlporter.Schema) (string, error) {
+func (p *PostgreSQL) Generate(schema *sqlmapper.Schema) (string, error) {
 	if schema == nil {
 		return "", errors.New("empty schema")
 	}
@@ -182,7 +182,7 @@ func (p *PostgreSQL) parseTypes(content string) error {
 	for _, match := range enumMatches {
 		if len(match) > 2 {
 			typeName := match[1]
-			typ := sqlporter.Type{
+			typ := sqlmapper.Type{
 				Name:       typeName,
 				Kind:       "ENUM",
 				Definition: match[2],
@@ -205,7 +205,7 @@ func (p *PostgreSQL) parseTypes(content string) error {
 	for _, match := range compositeMatches {
 		if len(match) > 2 {
 			typeName := match[1]
-			typ := sqlporter.Type{
+			typ := sqlmapper.Type{
 				Name:       typeName,
 				Kind:       "COMPOSITE",
 				Definition: match[2],
@@ -231,7 +231,7 @@ func (p *PostgreSQL) parseExtensions(content string) error {
 
 	for _, match := range matches {
 		if len(match) > 1 {
-			extension := sqlporter.Extension{
+			extension := sqlmapper.Extension{
 				Name: match[1],
 			}
 			if extension.Name == "" {
@@ -254,7 +254,7 @@ func (p *PostgreSQL) parseSequences(content string) error {
 	for _, match := range matches {
 		if len(match) > 1 {
 			seqName := match[1]
-			seq := sqlporter.Sequence{
+			seq := sqlmapper.Sequence{
 				Name: seqName,
 			}
 
@@ -301,7 +301,7 @@ func (p *PostgreSQL) parseTables(content string) error {
 			tableName := match[1]
 			columnDefs := match[2]
 
-			table := sqlporter.Table{}
+			table := sqlmapper.Table{}
 
 			// Parse schema if exists
 			parts := strings.Split(tableName, ".")
@@ -356,7 +356,7 @@ func (p *PostgreSQL) parseTables(content string) error {
 	return nil
 }
 
-func (p *PostgreSQL) parseColumnsAndConstraints(columnDefs string, table *sqlporter.Table) error {
+func (p *PostgreSQL) parseColumnsAndConstraints(columnDefs string, table *sqlmapper.Table) error {
 	// Split column definitions
 	defs := strings.Split(columnDefs, ",")
 	var currentDef strings.Builder
@@ -411,14 +411,14 @@ func (p *PostgreSQL) parseColumnsAndConstraints(columnDefs string, table *sqlpor
 
 			// Check for inline constraints
 			if strings.Contains(strings.ToUpper(def), "PRIMARY KEY") {
-				table.Constraints = append(table.Constraints, sqlporter.Constraint{
+				table.Constraints = append(table.Constraints, sqlmapper.Constraint{
 					Type:    "PRIMARY KEY",
 					Columns: []string{column.Name},
 				})
 				column.IsPrimaryKey = true
 			}
 			if strings.Contains(strings.ToUpper(def), "UNIQUE") {
-				table.Constraints = append(table.Constraints, sqlporter.Constraint{
+				table.Constraints = append(table.Constraints, sqlmapper.Constraint{
 					Type:    "UNIQUE",
 					Columns: []string{column.Name},
 				})
@@ -427,7 +427,7 @@ func (p *PostgreSQL) parseColumnsAndConstraints(columnDefs string, table *sqlpor
 			if strings.Contains(strings.ToUpper(def), "CHECK") {
 				re := regexp.MustCompile(`CHECK\s*\((.*?)\)`)
 				if matches := re.FindStringSubmatch(def); len(matches) > 1 {
-					table.Constraints = append(table.Constraints, sqlporter.Constraint{
+					table.Constraints = append(table.Constraints, sqlmapper.Constraint{
 						Type:            "CHECK",
 						Columns:         []string{column.Name},
 						CheckExpression: matches[1],
@@ -441,13 +441,13 @@ func (p *PostgreSQL) parseColumnsAndConstraints(columnDefs string, table *sqlpor
 	return nil
 }
 
-func (p *PostgreSQL) parseColumn(def string) (sqlporter.Column, error) {
+func (p *PostgreSQL) parseColumn(def string) (sqlmapper.Column, error) {
 	parts := strings.Fields(def)
 	if len(parts) < 2 {
-		return sqlporter.Column{}, fmt.Errorf("invalid column definition: %s", def)
+		return sqlmapper.Column{}, fmt.Errorf("invalid column definition: %s", def)
 	}
 
-	column := sqlporter.Column{
+	column := sqlmapper.Column{
 		Name:       parts[0],
 		DataType:   parts[1],
 		IsNullable: true,
@@ -518,8 +518,8 @@ func (p *PostgreSQL) parseColumn(def string) (sqlporter.Column, error) {
 	return column, nil
 }
 
-func (p *PostgreSQL) parseConstraint(def string) (sqlporter.Constraint, error) {
-	constraint := sqlporter.Constraint{}
+func (p *PostgreSQL) parseConstraint(def string) (sqlmapper.Constraint, error) {
+	constraint := sqlmapper.Constraint{}
 
 	// Extract constraint name if exists
 	if strings.HasPrefix(strings.ToUpper(def), "CONSTRAINT") {
@@ -593,7 +593,7 @@ func (p *PostgreSQL) parseIndexes(content string) error {
 			// Find the table
 			for i, table := range p.schema.Tables {
 				if table.Name == tableName || fmt.Sprintf("%s.%s", table.Schema, table.Name) == tableName {
-					index := sqlporter.Index{
+					index := sqlmapper.Index{
 						Name:     indexName,
 						Columns:  make([]string, len(columns)),
 						IsUnique: strings.Contains(match[0], "UNIQUE"),
@@ -622,7 +622,7 @@ func (p *PostgreSQL) parseViews(content string) error {
 	for _, match := range viewMatches {
 		if len(match) > 2 {
 			viewName := match[1]
-			view := sqlporter.View{
+			view := sqlmapper.View{
 				Definition: match[2],
 			}
 
@@ -646,7 +646,7 @@ func (p *PostgreSQL) parseViews(content string) error {
 	for _, match := range matViewMatches {
 		if len(match) > 2 {
 			viewName := match[1]
-			view := sqlporter.View{
+			view := sqlmapper.View{
 				Definition:     match[2],
 				IsMaterialized: true,
 			}
@@ -675,7 +675,7 @@ func (p *PostgreSQL) parseFunctions(content string) error {
 	for _, match := range funcMatches {
 		if len(match) > 5 {
 			functionName := match[1]
-			function := sqlporter.Function{
+			function := sqlmapper.Function{
 				Returns:  match[3],
 				Body:     match[4],
 				Language: match[5],
@@ -696,7 +696,7 @@ func (p *PostgreSQL) parseFunctions(content string) error {
 				for _, param := range params {
 					parts := strings.Fields(strings.TrimSpace(param))
 					if len(parts) >= 2 {
-						parameter := sqlporter.Parameter{
+						parameter := sqlmapper.Parameter{
 							Name:     parts[0],
 							DataType: parts[1],
 						}
@@ -716,7 +716,7 @@ func (p *PostgreSQL) parseFunctions(content string) error {
 	for _, match := range procMatches {
 		if len(match) > 4 {
 			procName := match[1]
-			function := sqlporter.Function{
+			function := sqlmapper.Function{
 				Name:     procName,
 				Body:     match[4],
 				Language: match[3],
@@ -736,7 +736,7 @@ func (p *PostgreSQL) parseFunctions(content string) error {
 				for _, param := range params {
 					parts := strings.Fields(strings.TrimSpace(param))
 					if len(parts) >= 2 {
-						parameter := sqlporter.Parameter{
+						parameter := sqlmapper.Parameter{
 							Name:     parts[0],
 							DataType: parts[1],
 						}
@@ -759,7 +759,7 @@ func (p *PostgreSQL) parseTriggers(content string) error {
 
 	for _, match := range triggerMatches {
 		if len(match) > 5 {
-			trigger := sqlporter.Trigger{
+			trigger := sqlmapper.Trigger{
 				Name:       match[1],
 				Timing:     match[2],
 				Event:      match[3],
@@ -785,7 +785,7 @@ func (p *PostgreSQL) parseTriggers(content string) error {
 
 	for _, match := range condTriggerMatches {
 		if len(match) > 5 {
-			trigger := sqlporter.Trigger{
+			trigger := sqlmapper.Trigger{
 				Name:       match[1],
 				Timing:     match[2],
 				Table:      match[3],
@@ -820,7 +820,7 @@ func (p *PostgreSQL) parsePermissions(content string) error {
 				privileges[i] = strings.TrimSpace(privileges[i])
 			}
 
-			perm := sqlporter.Permission{
+			perm := sqlmapper.Permission{
 				Type:       "GRANT",
 				Privileges: privileges,
 				Object:     match[2],
@@ -837,7 +837,7 @@ func (p *PostgreSQL) parsePermissions(content string) error {
 
 	for _, match := range grantAllMatches {
 		if len(match) > 2 {
-			perm := sqlporter.Permission{
+			perm := sqlmapper.Permission{
 				Type:       "GRANT",
 				Privileges: []string{"ALL PRIVILEGES"},
 				Object:     match[1],
@@ -854,7 +854,7 @@ func (p *PostgreSQL) parsePermissions(content string) error {
 
 	for _, match := range grantExecMatches {
 		if len(match) > 3 {
-			perm := sqlporter.Permission{
+			perm := sqlmapper.Permission{
 				Type:       "GRANT",
 				Privileges: []string{"EXECUTE"},
 				Object:     match[1],
@@ -876,7 +876,7 @@ func (p *PostgreSQL) parsePermissions(content string) error {
 				privileges[i] = strings.TrimSpace(privileges[i])
 			}
 
-			perm := sqlporter.Permission{
+			perm := sqlmapper.Permission{
 				Type:       "REVOKE",
 				Privileges: privileges,
 				Object:     match[2],
@@ -891,7 +891,7 @@ func (p *PostgreSQL) parsePermissions(content string) error {
 
 // Helper functions for generating SQL
 
-func (p *PostgreSQL) generateTableSQL(table sqlporter.Table) string {
+func (p *PostgreSQL) generateTableSQL(table sqlmapper.Table) string {
 	var result strings.Builder
 
 	// Table name with schema
@@ -924,7 +924,7 @@ func (p *PostgreSQL) generateTableSQL(table sqlporter.Table) string {
 	return result.String()
 }
 
-func (p *PostgreSQL) generateColumnSQL(column sqlporter.Column) string {
+func (p *PostgreSQL) generateColumnSQL(column sqlmapper.Column) string {
 	var parts []string
 	parts = append(parts, column.Name)
 
@@ -969,7 +969,7 @@ func (p *PostgreSQL) generateColumnSQL(column sqlporter.Column) string {
 	return strings.Join(parts, " ")
 }
 
-func (p *PostgreSQL) generateConstraintSQL(constraint sqlporter.Constraint) string {
+func (p *PostgreSQL) generateConstraintSQL(constraint sqlmapper.Constraint) string {
 	var result strings.Builder
 
 	if constraint.Name != "" {
@@ -996,7 +996,7 @@ func (p *PostgreSQL) generateConstraintSQL(constraint sqlporter.Constraint) stri
 	return result.String()
 }
 
-func (p *PostgreSQL) generateIndexSQL(tableName string, index sqlporter.Index) string {
+func (p *PostgreSQL) generateIndexSQL(tableName string, index sqlmapper.Index) string {
 	var result strings.Builder
 
 	if index.IsUnique {
@@ -1013,7 +1013,7 @@ func (p *PostgreSQL) generateIndexSQL(tableName string, index sqlporter.Index) s
 	return result.String()
 }
 
-func (p *PostgreSQL) generateViewSQL(view sqlporter.View) string {
+func (p *PostgreSQL) generateViewSQL(view sqlmapper.View) string {
 	viewName := view.Name
 	if view.Schema != "" {
 		viewName = fmt.Sprintf("%s.%s", view.Schema, view.Name)
@@ -1024,7 +1024,7 @@ func (p *PostgreSQL) generateViewSQL(view sqlporter.View) string {
 		view.Definition)
 }
 
-func (p *PostgreSQL) generateFunctionSQL(function sqlporter.Function) string {
+func (p *PostgreSQL) generateFunctionSQL(function sqlmapper.Function) string {
 	var result strings.Builder
 
 	functionName := function.Name
@@ -1049,7 +1049,7 @@ func (p *PostgreSQL) generateFunctionSQL(function sqlporter.Function) string {
 	return result.String()
 }
 
-func (p *PostgreSQL) generateTriggerSQL(trigger sqlporter.Trigger) string {
+func (p *PostgreSQL) generateTriggerSQL(trigger sqlmapper.Trigger) string {
 	tableName := trigger.Table
 	if trigger.Schema != "" {
 		tableName = fmt.Sprintf("%s.%s", trigger.Schema, trigger.Table)

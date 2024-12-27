@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mstgnz/sqlporter"
+	"github.com/mstgnz/sqlmapper"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -13,7 +13,7 @@ func TestPostgreSQL_Parse(t *testing.T) {
 		name     string
 		content  string
 		wantErr  bool
-		validate func(*testing.T, *sqlporter.Schema)
+		validate func(*testing.T, *sqlmapper.Schema)
 	}{
 		{
 			name:    "Empty content",
@@ -29,7 +29,7 @@ func TestPostgreSQL_Parse(t *testing.T) {
 				ALTER SYSTEM SET work_mem = '16MB';
 				ALTER DATABASE mydb SET timezone = 'UTC';`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				assert.NotNil(t, schema)
 				// SET komutları şu an için parse edilmiyor
 			},
@@ -46,7 +46,7 @@ func TestPostgreSQL_Parse(t *testing.T) {
 					TABLESPACE = pg_default
 					CONNECTION LIMIT = -1;`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				assert.Equal(t, "testdb", schema.Name)
 			},
 		},
@@ -58,7 +58,7 @@ func TestPostgreSQL_Parse(t *testing.T) {
 				CREATE SCHEMA myschema3 
 				CREATE TABLE mytable (id int);`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				assert.Contains(t, []string{"myschema", "myschema2", "myschema3"}, schema.Name)
 			},
 		},
@@ -79,7 +79,7 @@ func TestPostgreSQL_Parse(t *testing.T) {
 				COMMENT ON TABLE orders IS 'Store orders table';
 				COMMENT ON COLUMN orders.status IS 'Order current status';`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				assert.Len(t, schema.Tables, 1)
 				table := schema.Tables[0]
 				assert.Equal(t, "orders", table.Name)
@@ -97,7 +97,7 @@ func TestPostgreSQL_Parse(t *testing.T) {
 				ALTER TABLE employees ADD CONSTRAINT chk_salary CHECK (salary > 0);
 				ALTER TABLE employees RENAME TO staff;`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				// ALTER komutları şu an için parse edilmiyor
 			},
 		},
@@ -107,7 +107,7 @@ func TestPostgreSQL_Parse(t *testing.T) {
 				DROP TABLE IF EXISTS old_employees;
 				DROP TABLE employees CASCADE;`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				// DROP komutları şu an için parse edilmiyor
 			},
 		},
@@ -119,7 +119,7 @@ func TestPostgreSQL_Parse(t *testing.T) {
 				CREATE INDEX idx_employee_salary ON employees USING btree (salary DESC NULLS LAST);
 				CREATE INDEX idx_employee_document ON employees USING gin (document jsonb_path_ops);`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				// Index'ler tabloya bağlı olduğu için önce tablo oluşturulmalı
 			},
 		},
@@ -136,7 +136,7 @@ func TestPostgreSQL_Parse(t *testing.T) {
 				
 				ALTER SEQUENCE order_seq RESTART WITH 1000;`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				assert.Len(t, schema.Sequences, 1)
 				seq := schema.Sequences[0]
 				assert.Equal(t, "order_seq", seq.Name)
@@ -161,7 +161,7 @@ func TestPostgreSQL_Parse(t *testing.T) {
 				GROUP BY date_trunc('month', order_date)
 				WITH DATA;`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				assert.Len(t, schema.Views, 2)
 				assert.Equal(t, "employee_summary", schema.Views[0].Name)
 				assert.Equal(t, "monthly_sales", schema.Views[1].Name)
@@ -190,7 +190,7 @@ func TestPostgreSQL_Parse(t *testing.T) {
 				END;
 				$$;`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				assert.Len(t, schema.Functions, 2)
 				assert.Equal(t, "update_employee_status", schema.Functions[0].Name)
 				assert.Equal(t, "process_payroll", schema.Functions[1].Name)
@@ -210,7 +210,7 @@ func TestPostgreSQL_Parse(t *testing.T) {
 				WHEN (OLD.salary IS DISTINCT FROM NEW.salary)
 				EXECUTE FUNCTION audit_salary_changes();`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				assert.Len(t, schema.Triggers, 2)
 				assert.Equal(t, "update_employee_timestamp", schema.Triggers[0].Name)
 				assert.Equal(t, "check_salary_changes", schema.Triggers[1].Name)
@@ -232,7 +232,7 @@ func TestPostgreSQL_Parse(t *testing.T) {
 					price           numeric
 				);`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				assert.Len(t, schema.Types, 3)
 				assert.Equal(t, "mood", schema.Types[0].Name)
 				assert.Equal(t, "complex", schema.Types[1].Name)
@@ -246,7 +246,7 @@ func TestPostgreSQL_Parse(t *testing.T) {
 				CREATE EXTENSION postgis;
 				CREATE EXTENSION pg_trgm WITH SCHEMA public;`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				assert.Len(t, schema.Extensions, 3)
 				assert.Equal(t, "uuid-ossp", schema.Extensions[0].Name)
 				assert.Equal(t, "postgis", schema.Extensions[1].Name)
@@ -261,7 +261,7 @@ func TestPostgreSQL_Parse(t *testing.T) {
 				REVOKE UPDATE ON employees FROM intern_group;
 				GRANT EXECUTE ON FUNCTION calculate_salary(integer) TO payroll_group;`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				assert.Len(t, schema.Permissions, 4)
 			},
 		},
@@ -272,7 +272,7 @@ func TestPostgreSQL_Parse(t *testing.T) {
 				COMMENT ON COLUMN employees.salary IS 'Monthly salary in USD';
 				COMMENT ON FUNCTION calculate_salary(integer) IS 'Calculates employee salary with bonuses';`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				// Comment'ler ilgili nesnelerin comment field'larında saklanmalı
 			},
 		},
@@ -299,7 +299,7 @@ func TestPostgreSQL_Parse(t *testing.T) {
 						ON DELETE SET NULL
 				);`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				assert.Len(t, schema.Tables, 2)
 				empTable := schema.Tables[1]
 				assert.Len(t, empTable.Constraints, 3) // PK + 2 FK
@@ -324,7 +324,7 @@ func TestPostgreSQL_Parse(t *testing.T) {
 				SET CONSTRAINTS ALL DEFERRED;
 				SET CONSTRAINTS fk_department IMMEDIATE;`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				// SET CONSTRAINTS komutları şu an için parse edilmiyor
 			},
 		},
@@ -344,7 +344,7 @@ func TestPostgreSQL_Parse(t *testing.T) {
 				SELECT * FROM temp_employees 
 				WHERE hire_date > '2023-01-01';`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				// INSERT komutları şu an için parse edilmiyor
 			},
 		},
@@ -373,7 +373,7 @@ func TestPostgreSQL_Parse(t *testing.T) {
 func TestPostgreSQL_Generate(t *testing.T) {
 	tests := []struct {
 		name    string
-		schema  *sqlporter.Schema
+		schema  *sqlmapper.Schema
 		want    string
 		wantErr bool
 	}{
@@ -384,11 +384,11 @@ func TestPostgreSQL_Generate(t *testing.T) {
 		},
 		{
 			name: "Basic schema with one table",
-			schema: &sqlporter.Schema{
-				Tables: []sqlporter.Table{
+			schema: &sqlmapper.Schema{
+				Tables: []sqlmapper.Table{
 					{
 						Name: "users",
-						Columns: []sqlporter.Column{
+						Columns: []sqlmapper.Column{
 							{Name: "id", DataType: "SERIAL", IsPrimaryKey: true},
 							{Name: "name", DataType: "VARCHAR", Length: 100, IsNullable: false},
 							{Name: "email", DataType: "VARCHAR", Length: 255, IsNullable: false, IsUnique: true},
@@ -406,16 +406,16 @@ CREATE TABLE users (
 		},
 		{
 			name: "Schema with table and indexes",
-			schema: &sqlporter.Schema{
-				Tables: []sqlporter.Table{
+			schema: &sqlmapper.Schema{
+				Tables: []sqlmapper.Table{
 					{
 						Name: "products",
-						Columns: []sqlporter.Column{
+						Columns: []sqlmapper.Column{
 							{Name: "id", DataType: "SERIAL", IsPrimaryKey: true},
 							{Name: "name", DataType: "VARCHAR", Length: 100, IsNullable: false},
 							{Name: "price", DataType: "NUMERIC", Length: 10, Scale: 2, IsNullable: true},
 						},
-						Indexes: []sqlporter.Index{
+						Indexes: []sqlmapper.Index{
 							{Name: "idx_name", Columns: []string{"name"}},
 							{Name: "idx_price", Columns: []string{"price"}, IsUnique: true},
 						},

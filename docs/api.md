@@ -196,7 +196,7 @@ var (
 package main
 
 import (
-    "github.com/mstgnz/sqlporter"
+    "github.com/mstgnz/sqlmapper"
     "log"
 )
 
@@ -207,7 +207,7 @@ func main() {
     );`
 
     // Convert from MySQL to PostgreSQL
-    pgSQL, err := sqlporter.Convert(mysqlSQL, "mysql", "postgres")
+    pgSQL, err := sqlmapper.Convert(mysqlSQL, "mysql", "postgres")
     if err != nil {
         log.Fatal(err)
     }
@@ -223,7 +223,7 @@ package main
 
 import (
     "context"
-    "github.com/mstgnz/sqlporter/migration"
+    "github.com/mstgnz/sqlmapper/migration"
     "log"
 )
 

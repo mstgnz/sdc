@@ -6,22 +6,22 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/mstgnz/sqlporter"
+	"github.com/mstgnz/sqlmapper"
 )
 
 type Oracle struct {
-	schema *sqlporter.Schema
+	schema *sqlmapper.Schema
 }
 
 // NewOracle creates a new Oracle parser instance
 func NewOracle() *Oracle {
 	return &Oracle{
-		schema: &sqlporter.Schema{},
+		schema: &sqlmapper.Schema{},
 	}
 }
 
 // Parse parses Oracle dump content
-func (o *Oracle) Parse(content string) (*sqlporter.Schema, error) {
+func (o *Oracle) Parse(content string) (*sqlmapper.Schema, error) {
 	if content == "" {
 		return nil, errors.New("empty content")
 	}
@@ -110,8 +110,8 @@ func (o *Oracle) Parse(content string) (*sqlporter.Schema, error) {
 }
 
 // parseCreateTable parses CREATE TABLE statement
-func (o *Oracle) parseCreateTable(stmt string) (sqlporter.Table, error) {
-	table := sqlporter.Table{}
+func (o *Oracle) parseCreateTable(stmt string) (sqlmapper.Table, error) {
+	table := sqlmapper.Table{}
 
 	// Tablo adını al
 	tableNameRegex := regexp.MustCompile(`CREATE\s+TABLE\s+(\w+)`)
@@ -127,7 +127,7 @@ func (o *Oracle) parseCreateTable(stmt string) (sqlporter.Table, error) {
 	for _, colDef := range columnDefs {
 		colDef = strings.TrimSpace(colDef)
 		if strings.HasPrefix(colDef, "CONSTRAINT") {
-			constraint := sqlporter.Constraint{}
+			constraint := sqlmapper.Constraint{}
 
 			// Constraint adını al
 			nameRegex := regexp.MustCompile(`CONSTRAINT\s+(\w+)`)
@@ -207,7 +207,7 @@ func (o *Oracle) parseCreateTable(stmt string) (sqlporter.Table, error) {
 			continue
 		}
 
-		col := sqlporter.Column{
+		col := sqlmapper.Column{
 			Name:     parts[0],
 			DataType: parts[1],
 		}
@@ -228,7 +228,7 @@ func (o *Oracle) parseCreateTable(stmt string) (sqlporter.Table, error) {
 
 		if strings.Contains(colDef, "PRIMARY KEY") {
 			col.IsPrimaryKey = true
-			constraint := sqlporter.Constraint{
+			constraint := sqlmapper.Constraint{
 				Type:    "PRIMARY KEY",
 				Columns: []string{col.Name},
 			}
@@ -237,7 +237,7 @@ func (o *Oracle) parseCreateTable(stmt string) (sqlporter.Table, error) {
 
 		if strings.Contains(colDef, "UNIQUE") {
 			col.IsUnique = true
-			constraint := sqlporter.Constraint{
+			constraint := sqlmapper.Constraint{
 				Type:    "UNIQUE",
 				Columns: []string{col.Name},
 			}
@@ -248,7 +248,7 @@ func (o *Oracle) parseCreateTable(stmt string) (sqlporter.Table, error) {
 			checkRegex := regexp.MustCompile(`CHECK\s*\(([^)]+)\)`)
 			matches := checkRegex.FindStringSubmatch(colDef)
 			if len(matches) > 1 {
-				constraint := sqlporter.Constraint{
+				constraint := sqlmapper.Constraint{
 					Type:            "CHECK",
 					CheckExpression: strings.TrimSpace(matches[1]),
 				}
@@ -263,8 +263,8 @@ func (o *Oracle) parseCreateTable(stmt string) (sqlporter.Table, error) {
 }
 
 // parseCreateSequence parses CREATE SEQUENCE statement
-func (o *Oracle) parseCreateSequence(stmt string) (sqlporter.Sequence, error) {
-	seq := sqlporter.Sequence{}
+func (o *Oracle) parseCreateSequence(stmt string) (sqlmapper.Sequence, error) {
+	seq := sqlmapper.Sequence{}
 
 	// Sequence adını al
 	seqNameRegex := regexp.MustCompile(`CREATE\s+SEQUENCE\s+(\w+)`)
@@ -291,8 +291,8 @@ func (o *Oracle) parseCreateSequence(stmt string) (sqlporter.Sequence, error) {
 }
 
 // parseCreateView parses CREATE VIEW statement
-func (o *Oracle) parseCreateView(stmt string) (sqlporter.View, error) {
-	view := sqlporter.View{}
+func (o *Oracle) parseCreateView(stmt string) (sqlmapper.View, error) {
+	view := sqlmapper.View{}
 
 	// View adını al
 	viewNameRegex := regexp.MustCompile(`CREATE\s+(?:OR\s+REPLACE\s+)?VIEW\s+(\w+)`)
@@ -311,8 +311,8 @@ func (o *Oracle) parseCreateView(stmt string) (sqlporter.View, error) {
 }
 
 // parseCreateTrigger parses CREATE TRIGGER statement
-func (o *Oracle) parseCreateTrigger(stmt string) (sqlporter.Trigger, error) {
-	trigger := sqlporter.Trigger{}
+func (o *Oracle) parseCreateTrigger(stmt string) (sqlmapper.Trigger, error) {
+	trigger := sqlmapper.Trigger{}
 
 	// Trigger adını al
 	triggerNameRegex := regexp.MustCompile(`CREATE\s+(?:OR\s+REPLACE\s+)?TRIGGER\s+(\w+)`)
@@ -358,7 +358,7 @@ func (o *Oracle) parseCreateTrigger(stmt string) (sqlporter.Trigger, error) {
 }
 
 // Generate generates Oracle dump from schema
-func (o *Oracle) Generate(schema *sqlporter.Schema) (string, error) {
+func (o *Oracle) Generate(schema *sqlmapper.Schema) (string, error) {
 	if schema == nil {
 		return "", errors.New("empty schema")
 	}

@@ -6,22 +6,22 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/mstgnz/sqlporter"
+	"github.com/mstgnz/sqlmapper"
 )
 
 type MySQL struct {
-	schema *sqlporter.Schema
+	schema *sqlmapper.Schema
 }
 
 // NewMySQL creates a new MySQL parser instance
 func NewMySQL() *MySQL {
 	return &MySQL{
-		schema: &sqlporter.Schema{},
+		schema: &sqlmapper.Schema{},
 	}
 }
 
 // Parse parses MySQL dump content
-func (m *MySQL) Parse(content string) (*sqlporter.Schema, error) {
+func (m *MySQL) Parse(content string) (*sqlmapper.Schema, error) {
 	if content == "" {
 		return nil, errors.New("empty content")
 	}
@@ -62,7 +62,7 @@ func (m *MySQL) Parse(content string) (*sqlporter.Schema, error) {
 }
 
 // Generate generates MySQL dump from schema
-func (m *MySQL) Generate(schema *sqlporter.Schema) (string, error) {
+func (m *MySQL) Generate(schema *sqlmapper.Schema) (string, error) {
 	if schema == nil {
 		return "", errors.New("empty schema")
 	}
@@ -127,7 +127,7 @@ func (m *MySQL) parseTables(content string) error {
 			tableName := match[1]
 			columnDefs := match[2]
 
-			table := sqlporter.Table{}
+			table := sqlmapper.Table{}
 
 			// Parse schema if exists
 			parts := strings.Split(tableName, ".")
@@ -177,7 +177,7 @@ func (m *MySQL) parseTables(content string) error {
 	return nil
 }
 
-func (m *MySQL) parseColumnsAndConstraints(columnDefs string, table *sqlporter.Table) error {
+func (m *MySQL) parseColumnsAndConstraints(columnDefs string, table *sqlmapper.Table) error {
 	// Split column definitions
 	defs := strings.Split(columnDefs, ",")
 	var currentDef strings.Builder
@@ -232,7 +232,7 @@ func (m *MySQL) parseColumnsAndConstraints(columnDefs string, table *sqlporter.T
 
 			// Check for inline constraints
 			if strings.Contains(strings.ToUpper(def), "PRIMARY KEY") {
-				table.Constraints = append(table.Constraints, sqlporter.Constraint{
+				table.Constraints = append(table.Constraints, sqlmapper.Constraint{
 					Type:    "PRIMARY KEY",
 					Columns: []string{column.Name},
 				})
@@ -240,7 +240,7 @@ func (m *MySQL) parseColumnsAndConstraints(columnDefs string, table *sqlporter.T
 				column.IsNullable = false
 			}
 			if strings.Contains(strings.ToUpper(def), "UNIQUE") {
-				table.Constraints = append(table.Constraints, sqlporter.Constraint{
+				table.Constraints = append(table.Constraints, sqlmapper.Constraint{
 					Type:    "UNIQUE",
 					Columns: []string{column.Name},
 				})
@@ -249,7 +249,7 @@ func (m *MySQL) parseColumnsAndConstraints(columnDefs string, table *sqlporter.T
 			if strings.Contains(strings.ToUpper(def), "CHECK") {
 				re := regexp.MustCompile(`CHECK\s*\((.*?)\)`)
 				if matches := re.FindStringSubmatch(def); len(matches) > 1 {
-					table.Constraints = append(table.Constraints, sqlporter.Constraint{
+					table.Constraints = append(table.Constraints, sqlmapper.Constraint{
 						Type:            "CHECK",
 						Columns:         []string{column.Name},
 						CheckExpression: matches[1],
@@ -263,13 +263,13 @@ func (m *MySQL) parseColumnsAndConstraints(columnDefs string, table *sqlporter.T
 	return nil
 }
 
-func (m *MySQL) parseColumn(def string) (sqlporter.Column, error) {
+func (m *MySQL) parseColumn(def string) (sqlmapper.Column, error) {
 	parts := strings.Fields(def)
 	if len(parts) < 2 {
-		return sqlporter.Column{}, fmt.Errorf("invalid column definition: %s", def)
+		return sqlmapper.Column{}, fmt.Errorf("invalid column definition: %s", def)
 	}
 
-	column := sqlporter.Column{
+	column := sqlmapper.Column{
 		Name:       parts[0],
 		DataType:   parts[1],
 		IsNullable: true,
@@ -349,8 +349,8 @@ func (m *MySQL) parseColumn(def string) (sqlporter.Column, error) {
 	return column, nil
 }
 
-func (m *MySQL) parseConstraint(def string) (sqlporter.Constraint, error) {
-	constraint := sqlporter.Constraint{}
+func (m *MySQL) parseConstraint(def string) (sqlmapper.Constraint, error) {
+	constraint := sqlmapper.Constraint{}
 
 	// Extract constraint name if exists
 	if strings.HasPrefix(strings.ToUpper(def), "CONSTRAINT") {
@@ -424,7 +424,7 @@ func (m *MySQL) parseIndexes(content string) error {
 			// Find the table
 			for i, table := range m.schema.Tables {
 				if table.Name == tableName || fmt.Sprintf("%s.%s", table.Schema, table.Name) == tableName {
-					index := sqlporter.Index{
+					index := sqlmapper.Index{
 						Name:     indexName,
 						Columns:  make([]string, len(columns)),
 						IsUnique: strings.Contains(match[0], "UNIQUE"),
@@ -452,7 +452,7 @@ func (m *MySQL) parseViews(content string) error {
 	for _, match := range viewMatches {
 		if len(match) > 2 {
 			viewName := match[1]
-			view := sqlporter.View{
+			view := sqlmapper.View{
 				Definition: match[2],
 			}
 
@@ -480,7 +480,7 @@ func (m *MySQL) parseFunctions(content string) error {
 	for _, match := range funcMatches {
 		if len(match) > 4 {
 			functionName := match[1]
-			function := sqlporter.Function{
+			function := sqlmapper.Function{
 				Returns: match[3],
 				Body:    match[4],
 			}
@@ -500,7 +500,7 @@ func (m *MySQL) parseFunctions(content string) error {
 				for _, param := range params {
 					parts := strings.Fields(strings.TrimSpace(param))
 					if len(parts) >= 2 {
-						parameter := sqlporter.Parameter{
+						parameter := sqlmapper.Parameter{
 							Name:     parts[0],
 							DataType: parts[1],
 						}
@@ -520,7 +520,7 @@ func (m *MySQL) parseFunctions(content string) error {
 	for _, match := range procMatches {
 		if len(match) > 3 {
 			procName := match[1]
-			function := sqlporter.Function{
+			function := sqlmapper.Function{
 				Name:   procName,
 				Body:   match[3],
 				IsProc: true,
@@ -539,7 +539,7 @@ func (m *MySQL) parseFunctions(content string) error {
 				for _, param := range params {
 					parts := strings.Fields(strings.TrimSpace(param))
 					if len(parts) >= 3 { // IN/OUT/INOUT parameter_name type
-						parameter := sqlporter.Parameter{
+						parameter := sqlmapper.Parameter{
 							Name:      parts[1],
 							DataType:  parts[2],
 							Direction: parts[0],
@@ -562,7 +562,7 @@ func (m *MySQL) parseTriggers(content string) error {
 
 	for _, match := range triggerMatches {
 		if len(match) > 5 {
-			trigger := sqlporter.Trigger{
+			trigger := sqlmapper.Trigger{
 				Name:       match[1],
 				Timing:     match[2],
 				Event:      match[3],
@@ -605,7 +605,7 @@ func (m *MySQL) parsePermissions(content string) error {
 				}
 			}
 
-			perm := sqlporter.Permission{
+			perm := sqlmapper.Permission{
 				Type:       "GRANT",
 				Privileges: privileges,
 				Object:     match[2],
@@ -622,7 +622,7 @@ func (m *MySQL) parsePermissions(content string) error {
 
 	for _, match := range grantProcMatches {
 		if len(match) > 3 {
-			perm := sqlporter.Permission{
+			perm := sqlmapper.Permission{
 				Type:       "GRANT",
 				Privileges: []string{"EXECUTE"},
 				Object:     match[1],
@@ -652,7 +652,7 @@ func (m *MySQL) parsePermissions(content string) error {
 				}
 			}
 
-			perm := sqlporter.Permission{
+			perm := sqlmapper.Permission{
 				Type:       "REVOKE",
 				Privileges: privileges,
 				Object:     match[2],
@@ -667,7 +667,7 @@ func (m *MySQL) parsePermissions(content string) error {
 
 // Helper functions for generating SQL
 
-func (m *MySQL) generateTableSQL(table sqlporter.Table) string {
+func (m *MySQL) generateTableSQL(table sqlmapper.Table) string {
 	var result strings.Builder
 
 	result.WriteString(fmt.Sprintf("CREATE TABLE %s (\n", table.Name))
@@ -685,7 +685,7 @@ func (m *MySQL) generateTableSQL(table sqlporter.Table) string {
 	return result.String()
 }
 
-func (m *MySQL) generateColumnSQL(column sqlporter.Column) string {
+func (m *MySQL) generateColumnSQL(column sqlmapper.Column) string {
 	var parts []string
 	parts = append(parts, column.Name)
 
@@ -726,7 +726,7 @@ func (m *MySQL) generateColumnSQL(column sqlporter.Column) string {
 	return strings.Join(parts, " ")
 }
 
-func (m *MySQL) generateIndexSQL(tableName string, index sqlporter.Index) string {
+func (m *MySQL) generateIndexSQL(tableName string, index sqlmapper.Index) string {
 	var result strings.Builder
 
 	if index.IsUnique {

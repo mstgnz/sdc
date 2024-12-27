@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mstgnz/sqlporter"
+	"github.com/mstgnz/sqlmapper"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -13,7 +13,7 @@ func TestMySQL_Parse(t *testing.T) {
 		name     string
 		content  string
 		wantErr  bool
-		validate func(*testing.T, *sqlporter.Schema)
+		validate func(*testing.T, *sqlmapper.Schema)
 	}{
 		{
 			name:    "Empty content",
@@ -28,7 +28,7 @@ func TestMySQL_Parse(t *testing.T) {
 				SET time_zone = '+00:00';
 				SET foreign_key_checks = 1;`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				assert.NotNil(t, schema)
 			},
 		},
@@ -39,7 +39,7 @@ func TestMySQL_Parse(t *testing.T) {
 				DEFAULT CHARACTER SET utf8mb4
 				DEFAULT COLLATE utf8mb4_unicode_ci;`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				assert.Equal(t, "testdb", schema.Name)
 			},
 		},
@@ -60,7 +60,7 @@ func TestMySQL_Parse(t *testing.T) {
 				ALTER TABLE orders COMMENT = 'Store orders table';
 				ALTER TABLE orders MODIFY COLUMN status ENUM('new', 'processing', 'completed') COMMENT 'Order current status';`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				assert.Len(t, schema.Tables, 1)
 				table := schema.Tables[0]
 				assert.Equal(t, "orders", table.Name)
@@ -78,7 +78,7 @@ func TestMySQL_Parse(t *testing.T) {
 				ALTER TABLE employees ADD CONSTRAINT chk_salary CHECK (salary > 0);
 				ALTER TABLE employees RENAME TO staff;`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				// ALTER komutları şu an için parse edilmiyor
 			},
 		},
@@ -88,7 +88,7 @@ func TestMySQL_Parse(t *testing.T) {
 				DROP TABLE IF EXISTS old_employees;
 				DROP TABLE employees CASCADE;`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				// DROP komutları şu an için parse edilmiyor
 			},
 		},
@@ -100,7 +100,7 @@ func TestMySQL_Parse(t *testing.T) {
 				CREATE INDEX idx_employee_salary ON employees(salary DESC);
 				CREATE FULLTEXT INDEX idx_employee_bio ON employees(bio);`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				// Index'ler tabloya bağlı olduğu için önce tablo oluşturulmalı
 			},
 		},
@@ -115,7 +115,7 @@ func TestMySQL_Parse(t *testing.T) {
 				FROM employees
 				GROUP BY department_id;`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				assert.Len(t, schema.Views, 1)
 				assert.Equal(t, "employee_summary", schema.Views[0].Name)
 			},
@@ -138,7 +138,7 @@ func TestMySQL_Parse(t *testing.T) {
 				END //
 				DELIMITER ;`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				assert.Len(t, schema.Functions, 2)
 				assert.Equal(t, "update_employee_status", schema.Functions[0].Name)
 				assert.Equal(t, "process_payroll", schema.Functions[1].Name)
@@ -166,7 +166,7 @@ func TestMySQL_Parse(t *testing.T) {
 				END //
 				DELIMITER ;`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				assert.Len(t, schema.Triggers, 2)
 				assert.Equal(t, "before_employee_update", schema.Triggers[0].Name)
 				assert.Equal(t, "after_salary_change", schema.Triggers[1].Name)
@@ -180,7 +180,7 @@ func TestMySQL_Parse(t *testing.T) {
 				GRANT EXECUTE ON PROCEDURE process_payroll TO 'payroll_user'@'localhost';
 				REVOKE UPDATE ON employees FROM 'app_user'@'localhost';`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				assert.Len(t, schema.Permissions, 4)
 			},
 		},
@@ -202,7 +202,7 @@ func TestMySQL_Parse(t *testing.T) {
 						ON UPDATE CASCADE
 				);`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				assert.Len(t, schema.Tables, 2)
 				assert.Len(t, schema.Tables[1].Constraints, 2) // PK ve FK
 			},
@@ -218,7 +218,7 @@ func TestMySQL_Parse(t *testing.T) {
 					(1, 'Jane Smith'),
 					(2, 'Bob Wilson');`,
 			wantErr: false,
-			validate: func(t *testing.T, schema *sqlporter.Schema) {
+			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				// INSERT komutları şu an için parse edilmiyor
 			},
 		},
@@ -242,7 +242,7 @@ func TestMySQL_Parse(t *testing.T) {
 func TestMySQL_Generate(t *testing.T) {
 	tests := []struct {
 		name    string
-		schema  *sqlporter.Schema
+		schema  *sqlmapper.Schema
 		want    string
 		wantErr bool
 	}{
@@ -253,11 +253,11 @@ func TestMySQL_Generate(t *testing.T) {
 		},
 		{
 			name: "Basic schema with one table",
-			schema: &sqlporter.Schema{
-				Tables: []sqlporter.Table{
+			schema: &sqlmapper.Schema{
+				Tables: []sqlmapper.Table{
 					{
 						Name: "users",
-						Columns: []sqlporter.Column{
+						Columns: []sqlmapper.Column{
 							{Name: "id", DataType: "INT", AutoIncrement: true, IsPrimaryKey: true},
 							{Name: "name", DataType: "VARCHAR", Length: 100, IsNullable: false},
 							{Name: "email", DataType: "VARCHAR", Length: 255, IsNullable: false, IsUnique: true},
@@ -275,16 +275,16 @@ CREATE TABLE users (
 		},
 		{
 			name: "Schema with table and indexes",
-			schema: &sqlporter.Schema{
-				Tables: []sqlporter.Table{
+			schema: &sqlmapper.Schema{
+				Tables: []sqlmapper.Table{
 					{
 						Name: "products",
-						Columns: []sqlporter.Column{
+						Columns: []sqlmapper.Column{
 							{Name: "id", DataType: "INT", AutoIncrement: true, IsPrimaryKey: true},
 							{Name: "name", DataType: "VARCHAR", Length: 100, IsNullable: false},
 							{Name: "price", DataType: "DECIMAL", Length: 10, Scale: 2, IsNullable: true},
 						},
-						Indexes: []sqlporter.Index{
+						Indexes: []sqlmapper.Index{
 							{Name: "idx_name", Columns: []string{"name"}},
 							{Name: "idx_price", Columns: []string{"price"}, IsUnique: true},
 						},

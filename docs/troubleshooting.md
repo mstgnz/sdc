@@ -148,8 +148,8 @@ error: permission denied for table users
 
 If you encounter issues not covered in this guide:
 
-1. Check the [GitHub Issues](https://github.com/mstgnz/sqlporter/issues)
-2. Search the [Documentation](https://github.com/mstgnz/sqlporter/docs)
+1. Check the [GitHub Issues](https://github.com/mstgnz/sqlmapper/issues)
+2. Search the [Documentation](https://github.com/mstgnz/sqlmapper/docs)
 3. Create a new issue with:
    - Error message
    - Steps to reproduce

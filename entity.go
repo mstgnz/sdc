@@ -1,4 +1,4 @@
-package sqlporter
+package sqlmapper
 
 // DatabaseType represents the supported database types
 type DatabaseType string

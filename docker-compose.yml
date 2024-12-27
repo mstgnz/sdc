@@ -1,12 +1,12 @@
 version: '3.8'
 
 services:
-  sqlporter:
+  sqlmapper:
     build:
       context: .
       dockerfile: Dockerfile
-    image: mstgnz/sqlporter:latest
-    container_name: sqlporter
+    image: mstgnz/sqlmapper:latest
+    container_name: sqlmapper
     restart: unless-stopped
     environment:
       - TZ=UTC
@@ -14,8 +14,8 @@ services:
       - ./config:/root/config
       - ./data:/root/data
     networks:
-      - sqlporter-network
+      - sqlmapper-network
 
 networks:
-  sqlporter-network:
+  sqlmapper-network:
     driver: bridge 
