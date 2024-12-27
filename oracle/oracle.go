@@ -379,18 +379,26 @@ func (o *Oracle) Generate(schema *sqlporter.Schema) (string, error) {
 		for i, col := range table.Columns {
 			result.WriteString(fmt.Sprintf("    %s %s", col.Name, col.DataType))
 			if col.Length > 0 {
-				result.WriteString(fmt.Sprintf("(%d)", col.Length))
-			}
-			if !col.IsNullable {
-				result.WriteString(" NOT NULL")
-			}
-			if col.DefaultValue != "" {
-				result.WriteString(fmt.Sprintf(" DEFAULT %s", col.DefaultValue))
+				if col.Scale > 0 {
+					result.WriteString(fmt.Sprintf("(%d,%d)", col.Length, col.Scale))
+				} else {
+					result.WriteString(fmt.Sprintf("(%d)", col.Length))
+				}
 			}
 			if col.IsPrimaryKey {
 				result.WriteString(" PRIMARY KEY")
+			} else if col.IsNullable == false {
+				result.WriteString(" NOT NULL")
 			}
-			if col.IsUnique {
+			if col.DefaultValue != "" {
+				// String tipindeki default değerler için tırnak işareti ekle
+				if strings.HasPrefix(col.DataType, "VARCHAR") || strings.HasPrefix(col.DataType, "CHAR") {
+					result.WriteString(fmt.Sprintf(" DEFAULT '%s'", col.DefaultValue))
+				} else {
+					result.WriteString(fmt.Sprintf(" DEFAULT %s", col.DefaultValue))
+				}
+			}
+			if col.IsUnique && !col.IsPrimaryKey {
 				result.WriteString(" UNIQUE")
 			}
 			if i < len(table.Columns)-1 || len(table.Constraints) > 0 {
@@ -423,7 +431,20 @@ func (o *Oracle) Generate(schema *sqlporter.Schema) (string, error) {
 			result.WriteString("\n")
 		}
 
-		result.WriteString(");\n\n")
+		result.WriteString(");\n")
+
+		// Index'leri oluştur
+		for _, index := range table.Indexes {
+			if index.IsUnique {
+				result.WriteString(fmt.Sprintf("CREATE UNIQUE INDEX %s ON %s(%s);\n",
+					index.Name, table.Name, strings.Join(index.Columns, ", ")))
+			} else {
+				result.WriteString(fmt.Sprintf("CREATE INDEX %s ON %s(%s);\n",
+					index.Name, table.Name, strings.Join(index.Columns, ", ")))
+			}
+		}
+
+		result.WriteString("\n")
 	}
 
 	// View'ları oluştur

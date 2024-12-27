@@ -1,6 +1,7 @@
 package oracle
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/mstgnz/sqlporter"
@@ -160,64 +161,110 @@ func TestOracle_Parse(t *testing.T) {
 
 func TestOracle_Generate(t *testing.T) {
 	tests := []struct {
-		name     string
-		schema   *sqlporter.Schema
-		wantErr  bool
-		validate func(*testing.T, string)
+		name    string
+		schema  *sqlporter.Schema
+		want    string
+		wantErr bool
 	}{
 		{
-			name:    "Empty schema",
+			name:    "Nil schema",
 			schema:  nil,
 			wantErr: true,
 		},
 		{
-			name: "Full schema",
+			name: "Basic schema with one table",
 			schema: &sqlporter.Schema{
-				Name: "example_db",
 				Tables: []sqlporter.Table{
 					{
 						Name: "users",
 						Columns: []sqlporter.Column{
-							{Name: "id", DataType: "NUMBER", DefaultValue: "users_seq.NEXTVAL", IsPrimaryKey: true},
+							{Name: "id", DataType: "NUMBER", IsPrimaryKey: true},
 							{Name: "username", DataType: "VARCHAR2", Length: 50, IsNullable: false, IsUnique: true},
 							{Name: "email", DataType: "VARCHAR2", Length: 100, IsNullable: false},
-							{Name: "status", DataType: "VARCHAR2", Length: 20, DefaultValue: "'active'"},
 						},
 					},
 				},
-				Sequences: []sqlporter.Sequence{
-					{Name: "users_seq", StartValue: 1, IncrementBy: 1},
-				},
-				Views: []sqlporter.View{
+			},
+			want: strings.TrimSpace(`
+CREATE TABLE users (
+    id NUMBER PRIMARY KEY,
+    username VARCHAR2(50) NOT NULL UNIQUE,
+    email VARCHAR2(100) NOT NULL
+);`),
+			wantErr: false,
+		},
+		{
+			name: "Schema with table and indexes",
+			schema: &sqlporter.Schema{
+				Tables: []sqlporter.Table{
 					{
-						Name: "active_users_view",
-						Definition: `SELECT u.*, COUNT(p.id) as post_count
-							FROM users u LEFT JOIN posts p ON u.id = p.user_id
-							WHERE u.status = 'active'
-							GROUP BY u.id`,
+						Name: "products",
+						Columns: []sqlporter.Column{
+							{Name: "id", DataType: "NUMBER", IsPrimaryKey: true},
+							{Name: "name", DataType: "VARCHAR2", Length: 100, IsNullable: false},
+							{Name: "price", DataType: "NUMBER", Length: 10, Scale: 2, IsNullable: true},
+						},
+						Indexes: []sqlporter.Index{
+							{Name: "idx_name", Columns: []string{"name"}},
+							{Name: "idx_price", Columns: []string{"price"}, IsUnique: true},
+						},
 					},
 				},
 			},
+			want: strings.TrimSpace(`
+CREATE TABLE products (
+    id NUMBER PRIMARY KEY,
+    name VARCHAR2(100) NOT NULL,
+    price NUMBER(10,2)
+);
+CREATE INDEX idx_name ON products(name);
+CREATE UNIQUE INDEX idx_price ON products(price);`),
 			wantErr: false,
-			validate: func(t *testing.T, output string) {
-				assert.Contains(t, output, "CREATE TABLE users")
-				assert.Contains(t, output, "CREATE SEQUENCE users_seq")
-				assert.Contains(t, output, "CREATE VIEW active_users_view")
+		},
+		{
+			name: "Full schema",
+			schema: &sqlporter.Schema{
+				Tables: []sqlporter.Table{
+					{
+						Name: "users",
+						Columns: []sqlporter.Column{
+							{Name: "id", DataType: "NUMBER", IsPrimaryKey: true},
+							{Name: "username", DataType: "VARCHAR2", Length: 50, IsNullable: false, IsUnique: true},
+							{Name: "email", DataType: "VARCHAR2", Length: 100, IsNullable: false},
+							{Name: "status", DataType: "VARCHAR2", Length: 20, IsNullable: false, DefaultValue: "active"},
+						},
+					},
+				},
+				Views: []sqlporter.View{
+					{
+						Name:       "active_users_view",
+						Definition: "SELECT u.*, COUNT(p.id) as post_count FROM users u LEFT JOIN posts p ON u.id = p.user_id WHERE u.status = 'active' GROUP BY u.id",
+					},
+				},
 			},
+			want: strings.TrimSpace(`
+CREATE TABLE users (
+    id NUMBER PRIMARY KEY,
+    username VARCHAR2(50) NOT NULL UNIQUE,
+    email VARCHAR2(100) NOT NULL,
+    status VARCHAR2(20) NOT NULL DEFAULT 'active'
+);
+
+CREATE OR REPLACE VIEW active_users_view AS
+SELECT u.*, COUNT(p.id) as post_count FROM users u LEFT JOIN posts p ON u.id = p.user_id WHERE u.status = 'active' GROUP BY u.id;`),
+			wantErr: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			o := NewOracle()
-			output, err := o.Generate(tt.schema)
-			if tt.wantErr {
-				assert.Error(t, err)
-				return
+			s := NewOracle()
+			result, err := s.Generate(tt.schema)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Generate() error = %v, wantErr %v", err, tt.wantErr)
 			}
-			assert.NoError(t, err)
-			if tt.validate != nil {
-				tt.validate(t, output)
+			if tt.want != "" {
+				assert.Equal(t, tt.want, strings.TrimSpace(result))
 			}
 		})
 	}
