@@ -387,7 +387,7 @@ func (o *Oracle) Generate(schema *sqlporter.Schema) (string, error) {
 			}
 			if col.IsPrimaryKey {
 				result.WriteString(" PRIMARY KEY")
-			} else if col.IsNullable == false {
+			} else if !col.IsNullable {
 				result.WriteString(" NOT NULL")
 			}
 			if col.DefaultValue != "" {
