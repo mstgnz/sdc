@@ -42,11 +42,14 @@ func TestSQLite_Parse(t *testing.T) {
 		},
 		{
 			name:    "CREATE INDEX",
-			content: "CREATE INDEX idx_name ON test (name);",
+			content: "CREATE TABLE test (id INTEGER PRIMARY KEY, name TEXT); CREATE INDEX idx_name ON test (name);",
 			wantErr: false,
 			validate: func(t *testing.T, schema *sqlmapper.Schema) {
 				assert.NotNil(t, schema)
-				// Additional validation logic can be added here
+				assert.Len(t, schema.Tables, 1)
+				assert.Len(t, schema.Tables[0].Indexes, 1)
+				assert.Equal(t, "idx_name", schema.Tables[0].Indexes[0].Name)
+				assert.Equal(t, []string{"name"}, schema.Tables[0].Indexes[0].Columns)
 			},
 		},
 		{
