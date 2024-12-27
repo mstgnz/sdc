@@ -49,17 +49,19 @@ type Table struct {
 
 // Column represents a table column
 type Column struct {
-	Name          string
-	DataType      string
-	Length        int
-	Precision     int
-	Scale         int
-	IsNullable    bool
-	DefaultValue  string
-	AutoIncrement bool
-	Comment       string
-	Collation     string
-	CharacterSet  string
+	Name            string
+	DataType        string
+	Length          int
+	Scale           int
+	Precision       int
+	IsNullable      bool
+	DefaultValue    string
+	AutoIncrement   bool
+	IsPrimaryKey    bool
+	IsUnique        bool
+	Comment         string
+	Order           int
+	CheckExpression string
 }
 
 // Index represents a table index
@@ -108,16 +110,13 @@ type Procedure struct {
 
 // Function represents a database function
 type Function struct {
-	Name          string
-	Schema        string
-	Parameters    []Parameter
-	Returns       string
-	Body          string
-	Language      string
-	Security      string // DEFINER, INVOKER
-	SQLSecurity   string
-	Deterministic bool
-	Comment       string
+	Name       string
+	Schema     string
+	Parameters []Parameter
+	Returns    string
+	Body       string
+	Language   string
+	IsProc     bool
 }
 
 // Parameter represents a procedure or function parameter
@@ -133,24 +132,19 @@ type Trigger struct {
 	Name       string
 	Schema     string
 	Table      string
-	Timing     string // BEFORE, AFTER, INSTEAD OF
-	Event      string // INSERT, UPDATE, DELETE
+	Timing     string
+	Event      string
 	Body       string
-	ForEachRow bool
 	Condition  string
-	Enabled    bool
+	ForEachRow bool
 }
 
 // View represents a database view
 type View struct {
-	Name        string
-	Schema      string
-	Definition  string
-	IsMaterial  bool
-	Columns     []string
-	CheckOption string // NONE, LOCAL, CASCADED
-	Security    string // DEFINER, INVOKER
-	Comment     string
+	Name           string
+	Schema         string
+	Definition     string
+	IsMaterialized bool
 }
 
 // Sequence represents a database sequence
@@ -174,11 +168,11 @@ type Extension struct {
 
 // Permission represents a database permission
 type Permission struct {
-	Object      string
-	ObjectType  string
-	Grantee     string
-	Privileges  []string
-	GrantOption bool
+	Type       string // GRANT, REVOKE
+	Privileges []string
+	Object     string
+	Grantee    string
+	WithGrant  bool
 }
 
 // UserDefinedType represents custom data types
