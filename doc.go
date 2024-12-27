@@ -1,7 +1,7 @@
 /*
 Package sqlporter provides SQL dump conversion functionality between different database systems.
 
-SDC (SQL Dump Converter) is a powerful Go library that allows you to convert SQL dump files
+SQLPORTER (Parser, Mapper, Converter, Migrator, etc.) is a powerful Go library that allows you to convert SQL dump files
 between different database systems. This library is particularly useful when you need to
 migrate a database schema from one system to another.
 
@@ -82,7 +82,7 @@ The package provides a structured logging system:
 
 	log := logger.NewLogger(logger.Config{
 		Level:  logger.INFO,
-		Prefix: "[SDC] ",
+		Prefix: "[SQLPORTER] ",
 	})
 
 	log.Info("Starting conversion", map[string]interface{}{
