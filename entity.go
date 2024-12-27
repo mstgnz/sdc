@@ -155,16 +155,14 @@ type View struct {
 
 // Sequence represents a database sequence
 type Sequence struct {
-	Name       string
-	Schema     string
-	Start      int64
-	Increment  int64
-	MinValue   int64
-	MaxValue   int64
-	Cache      int64
-	Cycle      bool
-	CurrentVal int64
-	Order      bool
+	Name        string
+	Schema      string
+	IncrementBy int
+	MinValue    int
+	MaxValue    int
+	StartValue  int
+	Cache       int
+	Cycle       bool
 }
 
 // Extension represents a database extension
