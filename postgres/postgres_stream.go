@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/mstgnz/sqlmapper"
+	"github.com/mstgnz/sqlmapper/stream"
 )
 
 // PostgreSQLStreamParser implements the StreamParser interface for PostgreSQL
@@ -22,8 +23,8 @@ func NewPostgreSQLStreamParser() *PostgreSQLStreamParser {
 }
 
 // ParseStream implements the StreamParser interface
-func (p *PostgreSQLStreamParser) ParseStream(reader io.Reader, callback func(sqlmapper.SchemaObject) error) error {
-	streamReader := sqlmapper.NewStreamReader(reader, ";")
+func (p *PostgreSQLStreamParser) ParseStream(reader io.Reader, callback func(stream.SchemaObject) error) error {
+	streamReader := stream.NewStreamReader(reader, ";")
 
 	for {
 		statement, err := streamReader.ReadStatement()
@@ -46,8 +47,8 @@ func (p *PostgreSQLStreamParser) ParseStream(reader io.Reader, callback func(sql
 				return err
 			}
 
-			err = callback(sqlmapper.SchemaObject{
-				Type: sqlmapper.TypeObject,
+			err = callback(stream.SchemaObject{
+				Type: stream.TypeObject,
 				Data: typ,
 			})
 			if err != nil {
@@ -63,8 +64,8 @@ func (p *PostgreSQLStreamParser) ParseStream(reader io.Reader, callback func(sql
 				return err
 			}
 
-			err = callback(sqlmapper.SchemaObject{
-				Type: sqlmapper.TableObject,
+			err = callback(stream.SchemaObject{
+				Type: stream.TableObject,
 				Data: table,
 			})
 			if err != nil {
@@ -81,8 +82,8 @@ func (p *PostgreSQLStreamParser) ParseStream(reader io.Reader, callback func(sql
 				return err
 			}
 
-			err = callback(sqlmapper.SchemaObject{
-				Type: sqlmapper.ViewObject,
+			err = callback(stream.SchemaObject{
+				Type: stream.ViewObject,
 				Data: view,
 			})
 			if err != nil {
@@ -98,8 +99,8 @@ func (p *PostgreSQLStreamParser) ParseStream(reader io.Reader, callback func(sql
 				return err
 			}
 
-			err = callback(sqlmapper.SchemaObject{
-				Type: sqlmapper.FunctionObject,
+			err = callback(stream.SchemaObject{
+				Type: stream.FunctionObject,
 				Data: function,
 			})
 			if err != nil {
@@ -115,8 +116,8 @@ func (p *PostgreSQLStreamParser) ParseStream(reader io.Reader, callback func(sql
 				return err
 			}
 
-			err = callback(sqlmapper.SchemaObject{
-				Type: sqlmapper.ProcedureObject,
+			err = callback(stream.SchemaObject{
+				Type: stream.ProcedureObject,
 				Data: procedure,
 			})
 			if err != nil {
@@ -132,8 +133,8 @@ func (p *PostgreSQLStreamParser) ParseStream(reader io.Reader, callback func(sql
 				return err
 			}
 
-			err = callback(sqlmapper.SchemaObject{
-				Type: sqlmapper.TriggerObject,
+			err = callback(stream.SchemaObject{
+				Type: stream.TriggerObject,
 				Data: trigger,
 			})
 			if err != nil {
@@ -150,8 +151,8 @@ func (p *PostgreSQLStreamParser) ParseStream(reader io.Reader, callback func(sql
 				return err
 			}
 
-			err = callback(sqlmapper.SchemaObject{
-				Type: sqlmapper.IndexObject,
+			err = callback(stream.SchemaObject{
+				Type: stream.IndexObject,
 				Data: index,
 			})
 			if err != nil {
@@ -168,8 +169,8 @@ func (p *PostgreSQLStreamParser) ParseStream(reader io.Reader, callback func(sql
 				return err
 			}
 
-			err = callback(sqlmapper.SchemaObject{
-				Type: sqlmapper.PermissionObject,
+			err = callback(stream.SchemaObject{
+				Type: stream.PermissionObject,
 				Data: permission,
 			})
 			if err != nil {
@@ -183,10 +184,10 @@ func (p *PostgreSQLStreamParser) ParseStream(reader io.Reader, callback func(sql
 }
 
 // ParseStreamParallel implements parallel processing for PostgreSQL stream parsing
-func (p *PostgreSQLStreamParser) ParseStreamParallel(reader io.Reader, callback func(sqlmapper.SchemaObject) error, workers int) error {
-	streamReader := sqlmapper.NewStreamReader(reader, ";")
+func (p *PostgreSQLStreamParser) ParseStreamParallel(reader io.Reader, callback func(stream.SchemaObject) error, workers int) error {
+	streamReader := stream.NewStreamReader(reader, ";")
 	statements := make(chan string, workers)
-	results := make(chan sqlmapper.SchemaObject, workers)
+	results := make(chan stream.SchemaObject, workers)
 	errors := make(chan error, workers)
 	var wg sync.WaitGroup
 
@@ -252,7 +253,7 @@ func (p *PostgreSQLStreamParser) ParseStreamParallel(reader io.Reader, callback 
 }
 
 // parseStatement parses a single SQL statement and returns a SchemaObject
-func (p *PostgreSQLStreamParser) parseStatement(statement string) (*sqlmapper.SchemaObject, error) {
+func (p *PostgreSQLStreamParser) parseStatement(statement string) (*stream.SchemaObject, error) {
 	upperStatement := strings.ToUpper(statement)
 
 	switch {
@@ -261,8 +262,8 @@ func (p *PostgreSQLStreamParser) parseStatement(statement string) (*sqlmapper.Sc
 		if err != nil {
 			return nil, err
 		}
-		return &sqlmapper.SchemaObject{
-			Type: sqlmapper.TypeObject,
+		return &stream.SchemaObject{
+			Type: stream.TypeObject,
 			Data: typ,
 		}, nil
 
@@ -271,8 +272,8 @@ func (p *PostgreSQLStreamParser) parseStatement(statement string) (*sqlmapper.Sc
 		if err != nil {
 			return nil, err
 		}
-		return &sqlmapper.SchemaObject{
-			Type: sqlmapper.TableObject,
+		return &stream.SchemaObject{
+			Type: stream.TableObject,
 			Data: table,
 		}, nil
 
@@ -282,8 +283,8 @@ func (p *PostgreSQLStreamParser) parseStatement(statement string) (*sqlmapper.Sc
 		if err != nil {
 			return nil, err
 		}
-		return &sqlmapper.SchemaObject{
-			Type: sqlmapper.ViewObject,
+		return &stream.SchemaObject{
+			Type: stream.ViewObject,
 			Data: view,
 		}, nil
 
@@ -292,8 +293,8 @@ func (p *PostgreSQLStreamParser) parseStatement(statement string) (*sqlmapper.Sc
 		if err != nil {
 			return nil, err
 		}
-		return &sqlmapper.SchemaObject{
-			Type: sqlmapper.FunctionObject,
+		return &stream.SchemaObject{
+			Type: stream.FunctionObject,
 			Data: function,
 		}, nil
 
@@ -302,8 +303,8 @@ func (p *PostgreSQLStreamParser) parseStatement(statement string) (*sqlmapper.Sc
 		if err != nil {
 			return nil, err
 		}
-		return &sqlmapper.SchemaObject{
-			Type: sqlmapper.ProcedureObject,
+		return &stream.SchemaObject{
+			Type: stream.ProcedureObject,
 			Data: procedure,
 		}, nil
 
@@ -312,8 +313,8 @@ func (p *PostgreSQLStreamParser) parseStatement(statement string) (*sqlmapper.Sc
 		if err != nil {
 			return nil, err
 		}
-		return &sqlmapper.SchemaObject{
-			Type: sqlmapper.TriggerObject,
+		return &stream.SchemaObject{
+			Type: stream.TriggerObject,
 			Data: trigger,
 		}, nil
 
@@ -323,8 +324,8 @@ func (p *PostgreSQLStreamParser) parseStatement(statement string) (*sqlmapper.Sc
 		if err != nil {
 			return nil, err
 		}
-		return &sqlmapper.SchemaObject{
-			Type: sqlmapper.IndexObject,
+		return &stream.SchemaObject{
+			Type: stream.IndexObject,
 			Data: index,
 		}, nil
 
@@ -334,8 +335,8 @@ func (p *PostgreSQLStreamParser) parseStatement(statement string) (*sqlmapper.Sc
 		if err != nil {
 			return nil, err
 		}
-		return &sqlmapper.SchemaObject{
-			Type: sqlmapper.PermissionObject,
+		return &stream.SchemaObject{
+			Type: stream.PermissionObject,
 			Data: permission,
 		}, nil
 	}

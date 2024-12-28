@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/mstgnz/sqlmapper"
+	"github.com/mstgnz/sqlmapper/stream"
 )
 
 // MySQLStreamParser implements the StreamParser interface for MySQL
@@ -22,8 +23,8 @@ func NewMySQLStreamParser() *MySQLStreamParser {
 }
 
 // ParseStream implements the StreamParser interface
-func (p *MySQLStreamParser) ParseStream(reader io.Reader, callback func(sqlmapper.SchemaObject) error) error {
-	streamReader := sqlmapper.NewStreamReader(reader, ";")
+func (p *MySQLStreamParser) ParseStream(reader io.Reader, callback func(stream.SchemaObject) error) error {
+	streamReader := stream.NewStreamReader(reader, ";")
 
 	for {
 		statement, err := streamReader.ReadStatement()
@@ -46,8 +47,8 @@ func (p *MySQLStreamParser) ParseStream(reader io.Reader, callback func(sqlmappe
 				return err
 			}
 
-			err = callback(sqlmapper.SchemaObject{
-				Type: sqlmapper.TableObject,
+			err = callback(stream.SchemaObject{
+				Type: stream.TableObject,
 				Data: table,
 			})
 			if err != nil {
@@ -63,8 +64,8 @@ func (p *MySQLStreamParser) ParseStream(reader io.Reader, callback func(sqlmappe
 				return err
 			}
 
-			err = callback(sqlmapper.SchemaObject{
-				Type: sqlmapper.ViewObject,
+			err = callback(stream.SchemaObject{
+				Type: stream.ViewObject,
 				Data: view,
 			})
 			if err != nil {
@@ -80,8 +81,8 @@ func (p *MySQLStreamParser) ParseStream(reader io.Reader, callback func(sqlmappe
 				return err
 			}
 
-			err = callback(sqlmapper.SchemaObject{
-				Type: sqlmapper.FunctionObject,
+			err = callback(stream.SchemaObject{
+				Type: stream.FunctionObject,
 				Data: function,
 			})
 			if err != nil {
@@ -97,8 +98,8 @@ func (p *MySQLStreamParser) ParseStream(reader io.Reader, callback func(sqlmappe
 				return err
 			}
 
-			err = callback(sqlmapper.SchemaObject{
-				Type: sqlmapper.ProcedureObject,
+			err = callback(stream.SchemaObject{
+				Type: stream.ProcedureObject,
 				Data: procedure,
 			})
 			if err != nil {
@@ -114,8 +115,8 @@ func (p *MySQLStreamParser) ParseStream(reader io.Reader, callback func(sqlmappe
 				return err
 			}
 
-			err = callback(sqlmapper.SchemaObject{
-				Type: sqlmapper.TriggerObject,
+			err = callback(stream.SchemaObject{
+				Type: stream.TriggerObject,
 				Data: trigger,
 			})
 			if err != nil {
@@ -129,10 +130,10 @@ func (p *MySQLStreamParser) ParseStream(reader io.Reader, callback func(sqlmappe
 }
 
 // ParseStreamParallel implements parallel processing for MySQL stream parsing
-func (p *MySQLStreamParser) ParseStreamParallel(reader io.Reader, callback func(sqlmapper.SchemaObject) error, workers int) error {
-	streamReader := sqlmapper.NewStreamReader(reader, ";")
+func (p *MySQLStreamParser) ParseStreamParallel(reader io.Reader, callback func(stream.SchemaObject) error, workers int) error {
+	streamReader := stream.NewStreamReader(reader, ";")
 	statements := make(chan string, workers)
-	results := make(chan sqlmapper.SchemaObject, workers)
+	results := make(chan stream.SchemaObject, workers)
 	errors := make(chan error, workers)
 	var wg sync.WaitGroup
 
@@ -198,7 +199,7 @@ func (p *MySQLStreamParser) ParseStreamParallel(reader io.Reader, callback func(
 }
 
 // parseStatement parses a single SQL statement and returns a SchemaObject
-func (p *MySQLStreamParser) parseStatement(statement string) (*sqlmapper.SchemaObject, error) {
+func (p *MySQLStreamParser) parseStatement(statement string) (*stream.SchemaObject, error) {
 	upperStatement := strings.ToUpper(statement)
 
 	switch {
@@ -207,8 +208,8 @@ func (p *MySQLStreamParser) parseStatement(statement string) (*sqlmapper.SchemaO
 		if err != nil {
 			return nil, err
 		}
-		return &sqlmapper.SchemaObject{
-			Type: sqlmapper.TableObject,
+		return &stream.SchemaObject{
+			Type: stream.TableObject,
 			Data: table,
 		}, nil
 
@@ -217,8 +218,8 @@ func (p *MySQLStreamParser) parseStatement(statement string) (*sqlmapper.SchemaO
 		if err != nil {
 			return nil, err
 		}
-		return &sqlmapper.SchemaObject{
-			Type: sqlmapper.ViewObject,
+		return &stream.SchemaObject{
+			Type: stream.ViewObject,
 			Data: view,
 		}, nil
 
@@ -227,8 +228,8 @@ func (p *MySQLStreamParser) parseStatement(statement string) (*sqlmapper.SchemaO
 		if err != nil {
 			return nil, err
 		}
-		return &sqlmapper.SchemaObject{
-			Type: sqlmapper.FunctionObject,
+		return &stream.SchemaObject{
+			Type: stream.FunctionObject,
 			Data: function,
 		}, nil
 
@@ -237,8 +238,8 @@ func (p *MySQLStreamParser) parseStatement(statement string) (*sqlmapper.SchemaO
 		if err != nil {
 			return nil, err
 		}
-		return &sqlmapper.SchemaObject{
-			Type: sqlmapper.ProcedureObject,
+		return &stream.SchemaObject{
+			Type: stream.ProcedureObject,
 			Data: procedure,
 		}, nil
 	}
@@ -324,71 +325,81 @@ func (p *MySQLStreamParser) GenerateStream(schema *sqlmapper.Schema, writer io.W
 
 // parseTableStatement parses a CREATE TABLE statement
 func (p *MySQLStreamParser) parseTableStatement(statement string) (*sqlmapper.Table, error) {
+	// Create a temporary schema for parsing
 	tempSchema := &sqlmapper.Schema{}
 	p.mysql.schema = tempSchema
 
+	// Parse the table using the existing MySQL parser
 	if err := p.mysql.parseTables(statement); err != nil {
 		return nil, err
 	}
 
+	// Check if any table was parsed
 	if len(tempSchema.Tables) == 0 {
 		return nil, fmt.Errorf("no table found in statement")
 	}
 
+	// Return the first table
 	return &tempSchema.Tables[0], nil
 }
 
 // parseViewStatement parses a CREATE VIEW statement
 func (p *MySQLStreamParser) parseViewStatement(statement string) (*sqlmapper.View, error) {
+	// Create a temporary schema for parsing
 	tempSchema := &sqlmapper.Schema{}
 	p.mysql.schema = tempSchema
 
+	// Parse the view using the existing MySQL parser
 	if err := p.mysql.parseViews(statement); err != nil {
 		return nil, err
 	}
 
+	// Check if any view was parsed
 	if len(tempSchema.Views) == 0 {
 		return nil, fmt.Errorf("no view found in statement")
 	}
 
+	// Return the first view
 	return &tempSchema.Views[0], nil
 }
 
 // parseFunctionStatement parses a CREATE FUNCTION statement
 func (p *MySQLStreamParser) parseFunctionStatement(statement string) (*sqlmapper.Function, error) {
+	// Create a temporary schema for parsing
 	tempSchema := &sqlmapper.Schema{}
 	p.mysql.schema = tempSchema
 
+	// Parse the function using the existing MySQL parser
 	if err := p.mysql.parseFunctions(statement); err != nil {
 		return nil, err
 	}
 
+	// Check if any function was parsed
 	if len(tempSchema.Functions) == 0 {
 		return nil, fmt.Errorf("no function found in statement")
 	}
 
-	for _, fn := range tempSchema.Functions {
-		if !fn.IsProc {
-			return &fn, nil
-		}
-	}
-
-	return nil, fmt.Errorf("no function found in statement")
+	// Return the first function
+	return &tempSchema.Functions[0], nil
 }
 
 // parseProcedureStatement parses a CREATE PROCEDURE statement
 func (p *MySQLStreamParser) parseProcedureStatement(statement string) (*sqlmapper.Procedure, error) {
+	// Create a temporary schema for parsing
 	tempSchema := &sqlmapper.Schema{}
 	p.mysql.schema = tempSchema
 
+	// Parse the procedure using the existing MySQL parser
 	if err := p.mysql.parseFunctions(statement); err != nil {
 		return nil, err
 	}
 
+	// Check if any function was parsed
 	if len(tempSchema.Functions) == 0 {
 		return nil, fmt.Errorf("no procedure found in statement")
 	}
 
+	// Find the first procedure (function with IsProc=true)
 	for _, fn := range tempSchema.Functions {
 		if fn.IsProc {
 			proc := &sqlmapper.Procedure{
@@ -406,16 +417,20 @@ func (p *MySQLStreamParser) parseProcedureStatement(statement string) (*sqlmappe
 
 // parseTriggerStatement parses a CREATE TRIGGER statement
 func (p *MySQLStreamParser) parseTriggerStatement(statement string) (*sqlmapper.Trigger, error) {
+	// Create a temporary schema for parsing
 	tempSchema := &sqlmapper.Schema{}
 	p.mysql.schema = tempSchema
 
+	// Parse the trigger using the existing MySQL parser
 	if err := p.mysql.parseTriggers(statement); err != nil {
 		return nil, err
 	}
 
+	// Check if any trigger was parsed
 	if len(tempSchema.Triggers) == 0 {
 		return nil, fmt.Errorf("no trigger found in statement")
 	}
 
+	// Return the first trigger
 	return &tempSchema.Triggers[0], nil
 }

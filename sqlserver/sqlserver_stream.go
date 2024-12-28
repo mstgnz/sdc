@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/mstgnz/sqlmapper"
+	"github.com/mstgnz/sqlmapper/stream"
 )
 
 // SQLServerStreamParser implements the StreamParser interface for SQL Server
@@ -22,8 +23,8 @@ func NewSQLServerStreamParser() *SQLServerStreamParser {
 }
 
 // ParseStream implements the StreamParser interface
-func (p *SQLServerStreamParser) ParseStream(reader io.Reader, callback func(sqlmapper.SchemaObject) error) error {
-	streamReader := sqlmapper.NewStreamReader(reader, "GO")
+func (p *SQLServerStreamParser) ParseStream(reader io.Reader, callback func(stream.SchemaObject) error) error {
+	streamReader := stream.NewStreamReader(reader, "GO")
 
 	for {
 		statement, err := streamReader.ReadStatement()
@@ -46,8 +47,8 @@ func (p *SQLServerStreamParser) ParseStream(reader io.Reader, callback func(sqlm
 				return err
 			}
 
-			err = callback(sqlmapper.SchemaObject{
-				Type: sqlmapper.TableObject,
+			err = callback(stream.SchemaObject{
+				Type: stream.TableObject,
 				Data: table,
 			})
 			if err != nil {
@@ -63,8 +64,8 @@ func (p *SQLServerStreamParser) ParseStream(reader io.Reader, callback func(sqlm
 				return err
 			}
 
-			err = callback(sqlmapper.SchemaObject{
-				Type: sqlmapper.ViewObject,
+			err = callback(stream.SchemaObject{
+				Type: stream.ViewObject,
 				Data: view,
 			})
 			if err != nil {
@@ -80,8 +81,8 @@ func (p *SQLServerStreamParser) ParseStream(reader io.Reader, callback func(sqlm
 				return err
 			}
 
-			err = callback(sqlmapper.SchemaObject{
-				Type: sqlmapper.FunctionObject,
+			err = callback(stream.SchemaObject{
+				Type: stream.FunctionObject,
 				Data: function,
 			})
 			if err != nil {
@@ -98,8 +99,8 @@ func (p *SQLServerStreamParser) ParseStream(reader io.Reader, callback func(sqlm
 				return err
 			}
 
-			err = callback(sqlmapper.SchemaObject{
-				Type: sqlmapper.ProcedureObject,
+			err = callback(stream.SchemaObject{
+				Type: stream.ProcedureObject,
 				Data: procedure,
 			})
 			if err != nil {
@@ -115,8 +116,8 @@ func (p *SQLServerStreamParser) ParseStream(reader io.Reader, callback func(sqlm
 				return err
 			}
 
-			err = callback(sqlmapper.SchemaObject{
-				Type: sqlmapper.TriggerObject,
+			err = callback(stream.SchemaObject{
+				Type: stream.TriggerObject,
 				Data: trigger,
 			})
 			if err != nil {
@@ -135,8 +136,8 @@ func (p *SQLServerStreamParser) ParseStream(reader io.Reader, callback func(sqlm
 				return err
 			}
 
-			err = callback(sqlmapper.SchemaObject{
-				Type: sqlmapper.IndexObject,
+			err = callback(stream.SchemaObject{
+				Type: stream.IndexObject,
 				Data: index,
 			})
 			if err != nil {
@@ -150,10 +151,10 @@ func (p *SQLServerStreamParser) ParseStream(reader io.Reader, callback func(sqlm
 }
 
 // ParseStreamParallel implements parallel processing for SQL Server stream parsing
-func (p *SQLServerStreamParser) ParseStreamParallel(reader io.Reader, callback func(sqlmapper.SchemaObject) error, workers int) error {
-	streamReader := sqlmapper.NewStreamReader(reader, "GO")
+func (p *SQLServerStreamParser) ParseStreamParallel(reader io.Reader, callback func(stream.SchemaObject) error, workers int) error {
+	streamReader := stream.NewStreamReader(reader, "GO")
 	statements := make(chan string, workers)
-	results := make(chan sqlmapper.SchemaObject, workers)
+	results := make(chan stream.SchemaObject, workers)
 	errors := make(chan error, workers)
 	var wg sync.WaitGroup
 
@@ -219,7 +220,7 @@ func (p *SQLServerStreamParser) ParseStreamParallel(reader io.Reader, callback f
 }
 
 // parseStatement parses a single SQL statement and returns a SchemaObject
-func (p *SQLServerStreamParser) parseStatement(statement string) (*sqlmapper.SchemaObject, error) {
+func (p *SQLServerStreamParser) parseStatement(statement string) (*stream.SchemaObject, error) {
 	upperStatement := strings.ToUpper(statement)
 
 	switch {
@@ -228,8 +229,8 @@ func (p *SQLServerStreamParser) parseStatement(statement string) (*sqlmapper.Sch
 		if err != nil {
 			return nil, err
 		}
-		return &sqlmapper.SchemaObject{
-			Type: sqlmapper.TableObject,
+		return &stream.SchemaObject{
+			Type: stream.TableObject,
 			Data: table,
 		}, nil
 
@@ -238,8 +239,8 @@ func (p *SQLServerStreamParser) parseStatement(statement string) (*sqlmapper.Sch
 		if err != nil {
 			return nil, err
 		}
-		return &sqlmapper.SchemaObject{
-			Type: sqlmapper.ViewObject,
+		return &stream.SchemaObject{
+			Type: stream.ViewObject,
 			Data: view,
 		}, nil
 
@@ -248,8 +249,8 @@ func (p *SQLServerStreamParser) parseStatement(statement string) (*sqlmapper.Sch
 		if err != nil {
 			return nil, err
 		}
-		return &sqlmapper.SchemaObject{
-			Type: sqlmapper.FunctionObject,
+		return &stream.SchemaObject{
+			Type: stream.FunctionObject,
 			Data: function,
 		}, nil
 
@@ -258,8 +259,8 @@ func (p *SQLServerStreamParser) parseStatement(statement string) (*sqlmapper.Sch
 		if err != nil {
 			return nil, err
 		}
-		return &sqlmapper.SchemaObject{
-			Type: sqlmapper.ProcedureObject,
+		return &stream.SchemaObject{
+			Type: stream.ProcedureObject,
 			Data: procedure,
 		}, nil
 
@@ -268,8 +269,8 @@ func (p *SQLServerStreamParser) parseStatement(statement string) (*sqlmapper.Sch
 		if err != nil {
 			return nil, err
 		}
-		return &sqlmapper.SchemaObject{
-			Type: sqlmapper.TriggerObject,
+		return &stream.SchemaObject{
+			Type: stream.TriggerObject,
 			Data: trigger,
 		}, nil
 
@@ -281,8 +282,8 @@ func (p *SQLServerStreamParser) parseStatement(statement string) (*sqlmapper.Sch
 		if err != nil {
 			return nil, err
 		}
-		return &sqlmapper.SchemaObject{
-			Type: sqlmapper.IndexObject,
+		return &stream.SchemaObject{
+			Type: stream.IndexObject,
 			Data: index,
 		}, nil
 	}

@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/mstgnz/sqlmapper"
+	"github.com/mstgnz/sqlmapper/stream"
 )
 
 // SQLiteStreamParser implements the StreamParser interface for SQLite
@@ -22,8 +23,8 @@ func NewSQLiteStreamParser() *SQLiteStreamParser {
 }
 
 // ParseStream implements the StreamParser interface
-func (p *SQLiteStreamParser) ParseStream(reader io.Reader, callback func(sqlmapper.SchemaObject) error) error {
-	streamReader := sqlmapper.NewStreamReader(reader, ";")
+func (p *SQLiteStreamParser) ParseStream(reader io.Reader, callback func(stream.SchemaObject) error) error {
+	streamReader := stream.NewStreamReader(reader, ";")
 
 	for {
 		statement, err := streamReader.ReadStatement()
@@ -46,8 +47,8 @@ func (p *SQLiteStreamParser) ParseStream(reader io.Reader, callback func(sqlmapp
 				return err
 			}
 
-			err = callback(sqlmapper.SchemaObject{
-				Type: sqlmapper.TableObject,
+			err = callback(stream.SchemaObject{
+				Type: stream.TableObject,
 				Data: table,
 			})
 			if err != nil {
@@ -63,8 +64,8 @@ func (p *SQLiteStreamParser) ParseStream(reader io.Reader, callback func(sqlmapp
 				return err
 			}
 
-			err = callback(sqlmapper.SchemaObject{
-				Type: sqlmapper.ViewObject,
+			err = callback(stream.SchemaObject{
+				Type: stream.ViewObject,
 				Data: view,
 			})
 			if err != nil {
@@ -81,8 +82,8 @@ func (p *SQLiteStreamParser) ParseStream(reader io.Reader, callback func(sqlmapp
 				return err
 			}
 
-			err = callback(sqlmapper.SchemaObject{
-				Type: sqlmapper.IndexObject,
+			err = callback(stream.SchemaObject{
+				Type: stream.IndexObject,
 				Data: index,
 			})
 			if err != nil {
@@ -98,8 +99,8 @@ func (p *SQLiteStreamParser) ParseStream(reader io.Reader, callback func(sqlmapp
 				return err
 			}
 
-			err = callback(sqlmapper.SchemaObject{
-				Type: sqlmapper.TriggerObject,
+			err = callback(stream.SchemaObject{
+				Type: stream.TriggerObject,
 				Data: trigger,
 			})
 			if err != nil {
@@ -113,10 +114,10 @@ func (p *SQLiteStreamParser) ParseStream(reader io.Reader, callback func(sqlmapp
 }
 
 // ParseStreamParallel implements parallel processing for SQLite stream parsing
-func (p *SQLiteStreamParser) ParseStreamParallel(reader io.Reader, callback func(sqlmapper.SchemaObject) error, workers int) error {
-	streamReader := sqlmapper.NewStreamReader(reader, ";")
+func (p *SQLiteStreamParser) ParseStreamParallel(reader io.Reader, callback func(stream.SchemaObject) error, workers int) error {
+	streamReader := stream.NewStreamReader(reader, ";")
 	statements := make(chan string, workers)
-	results := make(chan sqlmapper.SchemaObject, workers)
+	results := make(chan stream.SchemaObject, workers)
 	errors := make(chan error, workers)
 	var wg sync.WaitGroup
 
@@ -182,7 +183,7 @@ func (p *SQLiteStreamParser) ParseStreamParallel(reader io.Reader, callback func
 }
 
 // parseStatement parses a single SQL statement and returns a SchemaObject
-func (p *SQLiteStreamParser) parseStatement(statement string) (*sqlmapper.SchemaObject, error) {
+func (p *SQLiteStreamParser) parseStatement(statement string) (*stream.SchemaObject, error) {
 	upperStatement := strings.ToUpper(statement)
 
 	switch {
@@ -191,8 +192,8 @@ func (p *SQLiteStreamParser) parseStatement(statement string) (*sqlmapper.Schema
 		if err != nil {
 			return nil, err
 		}
-		return &sqlmapper.SchemaObject{
-			Type: sqlmapper.TableObject,
+		return &stream.SchemaObject{
+			Type: stream.TableObject,
 			Data: table,
 		}, nil
 
@@ -201,8 +202,8 @@ func (p *SQLiteStreamParser) parseStatement(statement string) (*sqlmapper.Schema
 		if err != nil {
 			return nil, err
 		}
-		return &sqlmapper.SchemaObject{
-			Type: sqlmapper.ViewObject,
+		return &stream.SchemaObject{
+			Type: stream.ViewObject,
 			Data: view,
 		}, nil
 
@@ -211,8 +212,8 @@ func (p *SQLiteStreamParser) parseStatement(statement string) (*sqlmapper.Schema
 		if err != nil {
 			return nil, err
 		}
-		return &sqlmapper.SchemaObject{
-			Type: sqlmapper.IndexObject,
+		return &stream.SchemaObject{
+			Type: stream.IndexObject,
 			Data: index,
 		}, nil
 
@@ -221,8 +222,8 @@ func (p *SQLiteStreamParser) parseStatement(statement string) (*sqlmapper.Schema
 		if err != nil {
 			return nil, err
 		}
-		return &sqlmapper.SchemaObject{
-			Type: sqlmapper.TriggerObject,
+		return &stream.SchemaObject{
+			Type: stream.TriggerObject,
 			Data: trigger,
 		}, nil
 	}
