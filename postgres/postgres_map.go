@@ -1,8 +1,8 @@
 package postgres
 
-// PostgreSQL'den diğer veritabanı tiplerine veri tipi dönüşüm haritaları
+// Data type conversion maps from PostgreSQL to other database types
 var (
-	// PostgreSQLToMySQL PostgreSQL'den MySQL'e veri tipi dönüşümleri
+	// PostgreSQLToMySQL Data type conversions from PostgreSQL to MySQL
 	PostgreSQLToMySQL = map[string]string{
 		"smallint":         "smallint",
 		"integer":          "int",
@@ -35,7 +35,7 @@ var (
 		"interval":         "varchar(255)",
 	}
 
-	// PostgreSQLToSQLServer PostgreSQL'den SQL Server'a veri tipi dönüşümleri
+	// PostgreSQLToSQLServer Data type conversions from PostgreSQL to SQL Server
 	PostgreSQLToSQLServer = map[string]string{
 		"smallint":         "smallint",
 		"integer":          "int",
@@ -68,7 +68,7 @@ var (
 		"interval":         "varchar(255)",
 	}
 
-	// PostgreSQLToOracle PostgreSQL'den Oracle'a veri tipi dönüşümleri
+	// PostgreSQLToOracle Data type conversions from PostgreSQL to Oracle
 	PostgreSQLToOracle = map[string]string{
 		"smallint":         "NUMBER(5)",
 		"integer":          "NUMBER(10)",
@@ -101,7 +101,7 @@ var (
 		"interval":         "INTERVAL DAY TO SECOND",
 	}
 
-	// PostgreSQLToSQLite PostgreSQL'den SQLite'a veri tipi dönüşümleri
+	// PostgreSQLToSQLite Data type conversions from PostgreSQL to SQLite
 	PostgreSQLToSQLite = map[string]string{
 		"smallint":         "INTEGER",
 		"integer":          "INTEGER",

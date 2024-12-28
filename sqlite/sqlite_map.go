@@ -1,8 +1,8 @@
 package sqlite
 
-// SQLite'dan diğer veritabanı tiplerine veri tipi dönüşüm haritaları
+// Data type conversion maps from SQLite to other database types
 var (
-	// SQLiteToMySQL SQLite'dan MySQL'e veri tipi dönüşümleri
+	// SQLiteToMySQL Data type conversions from SQLite to MySQL
 	SQLiteToMySQL = map[string]string{
 		"INTEGER":  "int",
 		"REAL":     "double",
@@ -15,7 +15,7 @@ var (
 		"TIME":     "time",
 	}
 
-	// SQLiteToPostgreSQL SQLite'dan PostgreSQL'e veri tipi dönüşümleri
+	// SQLiteToPostgreSQL Data type conversions from SQLite to PostgreSQL
 	SQLiteToPostgreSQL = map[string]string{
 		"INTEGER":  "integer",
 		"REAL":     "double precision",
@@ -28,7 +28,7 @@ var (
 		"TIME":     "time",
 	}
 
-	// SQLiteToSQLServer SQLite'dan SQL Server'a veri tipi dönüşümleri
+	// SQLiteToSQLServer Data type conversions from SQLite to SQL Server
 	SQLiteToSQLServer = map[string]string{
 		"INTEGER":  "int",
 		"REAL":     "float",
@@ -41,7 +41,7 @@ var (
 		"TIME":     "time",
 	}
 
-	// SQLiteToOracle SQLite'dan Oracle'a veri tipi dönüşümleri
+	// SQLiteToOracle Data type conversions from SQLite to Oracle
 	SQLiteToOracle = map[string]string{
 		"INTEGER":  "NUMBER(10)",
 		"REAL":     "BINARY_DOUBLE",

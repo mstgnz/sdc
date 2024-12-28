@@ -1,8 +1,8 @@
 package oracle
 
-// Oracle'dan diğer veritabanı tiplerine veri tipi dönüşüm haritaları
+// Data type conversion maps from Oracle to other database types
 var (
-	// OracleToMySQL Oracle'dan MySQL'e veri tipi dönüşümleri
+	// OracleToMySQL Data type conversions from Oracle to MySQL
 	OracleToMySQL = map[string]string{
 		"NUMBER":        "decimal",
 		"NUMBER(1)":     "boolean",
@@ -32,7 +32,7 @@ var (
 		"UROWID":        "varchar(4000)",
 	}
 
-	// OracleToPostgreSQL Oracle'dan PostgreSQL'e veri tipi dönüşümleri
+	// OracleToPostgreSQL Data type conversions from Oracle to PostgreSQL
 	OracleToPostgreSQL = map[string]string{
 		"NUMBER":        "numeric",
 		"NUMBER(1)":     "boolean",
@@ -62,7 +62,7 @@ var (
 		"UROWID":        "varchar(4000)",
 	}
 
-	// OracleToSQLServer Oracle'dan SQL Server'a veri tipi dönüşümleri
+	// OracleToSQLServer Data type conversions from Oracle to SQL Server
 	OracleToSQLServer = map[string]string{
 		"NUMBER":        "decimal",
 		"NUMBER(1)":     "bit",
@@ -92,7 +92,7 @@ var (
 		"UROWID":        "varchar(4000)",
 	}
 
-	// OracleToSQLite Oracle'dan SQLite'a veri tipi dönüşümleri
+	// OracleToSQLite Data type conversions from Oracle to SQLite
 	OracleToSQLite = map[string]string{
 		"NUMBER":        "REAL",
 		"NUMBER(1)":     "INTEGER",

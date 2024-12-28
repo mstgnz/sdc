@@ -1,8 +1,8 @@
 package mysql
 
-// MySQL'den diğer veritabanı tiplerine veri tipi dönüşüm haritaları
+// Data type conversion maps from MySQL to other database types
 var (
-	// MySQLToPostgreSQL MySQL'den PostgreSQL'e veri tipi dönüşümleri
+	// MySQLToPostgreSQL Data type conversions from MySQL to PostgreSQL
 	MySQLToPostgreSQL = map[string]string{
 		"tinyint":    "smallint",
 		"smallint":   "smallint",
@@ -33,7 +33,7 @@ var (
 		"boolean":    "boolean",
 	}
 
-	// MySQLToSQLServer MySQL'den SQL Server'a veri tipi dönüşümleri
+	// MySQLToSQLServer Data type conversions from MySQL to SQL Server
 	MySQLToSQLServer = map[string]string{
 		"tinyint":    "tinyint",
 		"smallint":   "smallint",
@@ -64,7 +64,7 @@ var (
 		"boolean":    "bit",
 	}
 
-	// MySQLToOracle MySQL'den Oracle'a veri tipi dönüşümleri
+	// MySQLToOracle Data type conversions from MySQL to Oracle
 	MySQLToOracle = map[string]string{
 		"tinyint":    "NUMBER(3)",
 		"smallint":   "NUMBER(5)",
@@ -95,7 +95,7 @@ var (
 		"boolean":    "NUMBER(1)",
 	}
 
-	// MySQLToSQLite MySQL'den SQLite'a veri tipi dönüşümleri
+	// MySQLToSQLite Data type conversions from MySQL to SQLite
 	MySQLToSQLite = map[string]string{
 		"tinyint":    "INTEGER",
 		"smallint":   "INTEGER",

@@ -6,7 +6,6 @@ import (
 	"testing"
 )
 
-// TestDetectSourceType veritabanı tipini tespit etme fonksiyonunu test eder
 func TestDetectSourceType(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -54,7 +53,6 @@ func TestDetectSourceType(t *testing.T) {
 	}
 }
 
-// TestCreateOutputPath çıktı dosyası yolu oluşturma fonksiyonunu test eder
 func TestCreateOutputPath(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -91,7 +89,6 @@ func TestCreateOutputPath(t *testing.T) {
 	}
 }
 
-// TestCreateParser parser oluşturma fonksiyonunu test eder
 func TestCreateParser(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -140,9 +137,7 @@ func TestCreateParser(t *testing.T) {
 	}
 }
 
-// TestIntegration tüm sistemin entegrasyon testini gerçekleştirir
 func TestIntegration(t *testing.T) {
-	// Test dosyası oluştur
 	testSQL := `
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
@@ -157,7 +152,6 @@ CREATE TABLE users (
 		t.Fatalf("Test dosyası oluşturulamadı: %v", err)
 	}
 
-	// Test senaryoları
 	tests := []struct {
 		name     string
 		targetDB string
@@ -182,19 +176,16 @@ CREATE TABLE users (
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Test dosyasını oku
 			content, err := os.ReadFile(inputPath)
 			if err != nil {
 				t.Fatalf("Test dosyası okunamadı: %v", err)
 			}
 
-			// Kaynak tipi tespit et
 			sourceType := detectSourceType(string(content))
 			if sourceType != "postgres" {
 				t.Errorf("Beklenen kaynak tipi postgres, alınan %s", sourceType)
 			}
 
-			// Parser'ları oluştur
 			sourceParser := createParser(sourceType)
 			targetParser := createParser(tt.targetDB)
 
@@ -205,26 +196,22 @@ CREATE TABLE users (
 				return
 			}
 
-			// Parse et
 			schema, err := sourceParser.Parse(string(content))
 			if err != nil {
 				t.Fatalf("Parse işlemi başarısız: %v", err)
 			}
 
-			// Hedef SQL oluştur
 			result, err := targetParser.Generate(schema)
 			if err != nil {
 				t.Fatalf("SQL oluşturma başarısız: %v", err)
 			}
 
-			// Sonuç dosyasını oluştur
 			outputPath := createOutputPath(inputPath, tt.targetDB)
 			err = os.WriteFile(outputPath, []byte(result), 0644)
 			if err != nil {
 				t.Fatalf("Çıktı dosyası yazılamadı: %v", err)
 			}
 
-			// Sonuç dosyasının varlığını kontrol et
 			if _, err := os.Stat(outputPath); os.IsNotExist(err) {
 				t.Errorf("Çıktı dosyası oluşturulmadı: %s", outputPath)
 			}

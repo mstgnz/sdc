@@ -1,8 +1,8 @@
 package sqlserver
 
-// SQLServer'dan diğer veritabanı tiplerine veri tipi dönüşüm haritaları
+// Data type conversion maps from SQL Server to other database types
 var (
-	// SQLServerToMySQL SQLServer'dan MySQL'e veri tipi dönüşümleri
+	// SQLServerToMySQL Data type conversions from SQL Server to MySQL
 	SQLServerToMySQL = map[string]string{
 		"tinyint":          "tinyint",
 		"smallint":         "smallint",
@@ -36,7 +36,7 @@ var (
 		"sql_variant":      "text",
 	}
 
-	// SQLServerToPostgreSQL SQLServer'dan PostgreSQL'e veri tipi dönüşümleri
+	// SQLServerToPostgreSQL Data type conversions from SQL Server to PostgreSQL
 	SQLServerToPostgreSQL = map[string]string{
 		"tinyint":          "smallint",
 		"smallint":         "smallint",
@@ -70,7 +70,7 @@ var (
 		"sql_variant":      "text",
 	}
 
-	// SQLServerToOracle SQLServer'dan Oracle'a veri tipi dönüşümleri
+	// SQLServerToOracle Data type conversions from SQL Server to Oracle
 	SQLServerToOracle = map[string]string{
 		"tinyint":          "NUMBER(3)",
 		"smallint":         "NUMBER(5)",
@@ -104,7 +104,7 @@ var (
 		"sql_variant":      "CLOB",
 	}
 
-	// SQLServerToSQLite SQLServer'dan SQLite'a veri tipi dönüşümleri
+	// SQLServerToSQLite Data type conversions from SQL Server to SQLite
 	SQLServerToSQLite = map[string]string{
 		"tinyint":          "INTEGER",
 		"smallint":         "INTEGER",
