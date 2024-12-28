@@ -20,7 +20,7 @@ type MySQL struct {
 
 // NewMySQL creates and initializes a new MySQL parser instance.
 // It returns a parser that can handle MySQL specific SQL syntax and schema structures.
-func NewMySQL() *MySQL {
+func NewMySQL() sqlmapper.Database {
 	return &MySQL{
 		schema: &sqlmapper.Schema{},
 	}

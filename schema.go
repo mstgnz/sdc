@@ -3,6 +3,12 @@ package sqlmapper
 // DatabaseType represents the supported database types
 type DatabaseType string
 
+// Database represents the common interface for all database implementations
+type Database interface {
+	Parse(content string) (*Schema, error)
+	Generate(schema *Schema) (string, error)
+}
+
 const (
 	MySQL      DatabaseType = "mysql"
 	PostgreSQL DatabaseType = "postgresql"

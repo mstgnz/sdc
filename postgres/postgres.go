@@ -20,7 +20,7 @@ type PostgreSQL struct {
 
 // NewPostgreSQL creates and initializes a new PostgreSQL parser instance.
 // It returns a parser that can handle PostgreSQL specific SQL syntax and schema structures.
-func NewPostgreSQL() *PostgreSQL {
+func NewPostgreSQL() sqlmapper.Database {
 	return &PostgreSQL{
 		schema: &sqlmapper.Schema{},
 	}

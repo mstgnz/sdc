@@ -18,7 +18,7 @@ type PostgreSQLStreamParser struct {
 // NewPostgreSQLStreamParser creates a new PostgreSQL stream parser
 func NewPostgreSQLStreamParser() *PostgreSQLStreamParser {
 	return &PostgreSQLStreamParser{
-		postgres: NewPostgreSQL(),
+		postgres: NewPostgreSQL().(*PostgreSQL),
 	}
 }
 

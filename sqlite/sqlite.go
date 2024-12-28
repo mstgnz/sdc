@@ -21,7 +21,7 @@ type SQLite struct {
 
 // NewSQLite creates and initializes a new SQLite parser instance.
 // It returns a parser that can handle SQLite specific SQL syntax and schema structures.
-func NewSQLite() *SQLite {
+func NewSQLite() sqlmapper.Database {
 	return &SQLite{
 		schema: &sqlmapper.Schema{},
 		buf:    &bytes.Buffer{},

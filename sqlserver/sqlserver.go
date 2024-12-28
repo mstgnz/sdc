@@ -22,7 +22,7 @@ type SQLServer struct {
 
 // NewSQLServer creates and initializes a new SQL Server parser instance.
 // It returns a parser that can handle SQL Server specific SQL syntax and schema structures.
-func NewSQLServer() *SQLServer {
+func NewSQLServer() sqlmapper.Database {
 	return &SQLServer{
 		schema: &sqlmapper.Schema{},
 		buf:    bytes.NewBuffer(nil),

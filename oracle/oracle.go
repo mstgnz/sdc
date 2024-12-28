@@ -20,7 +20,7 @@ type Oracle struct {
 
 // NewOracle creates and initializes a new Oracle parser instance.
 // It returns a parser that can handle Oracle specific SQL syntax and schema structures.
-func NewOracle() *Oracle {
+func NewOracle() sqlmapper.Database {
 	return &Oracle{
 		schema: &sqlmapper.Schema{},
 	}

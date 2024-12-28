@@ -11,6 +11,7 @@ import (
 	"github.com/mstgnz/sqlmapper/postgres"
 	"github.com/mstgnz/sqlmapper/sqlite"
 	"github.com/mstgnz/sqlmapper/sqlserver"
+	"github.com/mstgnz/sqlmapper/stream"
 )
 
 // DatabaseType represents supported database types
@@ -92,7 +93,55 @@ func (c *Converter) Convert(sourceType, targetType DatabaseType, content string)
 	return result, nil
 }
 
+// StreamExample demonstrates stream parsing functionality
+func StreamExample() {
+	// Create MySQL stream parser
+	parser := mysql.NewMySQLStreamParser()
+
+	// Open source file
+	file, err := os.Open("examples/files/mysql.sql")
+	if err != nil {
+		log.Fatalf("Failed to open file: %v", err)
+	}
+	defer file.Close()
+
+	// Parse stream and handle objects
+	err = parser.ParseStream(file, func(obj stream.SchemaObject) error {
+		switch obj.Type {
+		case stream.TableObject:
+			if table, ok := obj.Data.(*sqlmapper.Table); ok {
+				fmt.Printf("Found table: %s\n", table.Name)
+			}
+		case stream.ViewObject:
+			if view, ok := obj.Data.(*sqlmapper.View); ok {
+				fmt.Printf("Found view: %s\n", view.Name)
+			}
+		case stream.FunctionObject:
+			if function, ok := obj.Data.(*sqlmapper.Function); ok {
+				fmt.Printf("Found function: %s\n", function.Name)
+			}
+		case stream.ProcedureObject:
+			if procedure, ok := obj.Data.(*sqlmapper.Procedure); ok {
+				fmt.Printf("Found procedure: %s\n", procedure.Name)
+			}
+		case stream.TriggerObject:
+			if trigger, ok := obj.Data.(*sqlmapper.Trigger); ok {
+				fmt.Printf("Found trigger: %s\n", trigger.Name)
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		log.Fatalf("Stream parsing error: %v", err)
+	}
+}
+
 func main() {
+	// Stream parsing example
+	fmt.Println("\n=== Stream Parsing Example ===")
+	StreamExample()
+
 	converter := NewConverter()
 
 	// Example conversions

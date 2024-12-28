@@ -18,7 +18,7 @@ type MySQLStreamParser struct {
 // NewMySQLStreamParser creates a new MySQL stream parser
 func NewMySQLStreamParser() *MySQLStreamParser {
 	return &MySQLStreamParser{
-		mysql: NewMySQL(),
+		mysql: NewMySQL().(*MySQL),
 	}
 }
 

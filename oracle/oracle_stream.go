@@ -18,7 +18,7 @@ type OracleStreamParser struct {
 // NewOracleStreamParser creates a new Oracle stream parser
 func NewOracleStreamParser() *OracleStreamParser {
 	return &OracleStreamParser{
-		oracle: NewOracle(),
+		oracle: NewOracle().(*Oracle),
 	}
 }
 

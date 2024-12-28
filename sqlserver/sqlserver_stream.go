@@ -18,7 +18,7 @@ type SQLServerStreamParser struct {
 // NewSQLServerStreamParser creates a new SQL Server stream parser
 func NewSQLServerStreamParser() *SQLServerStreamParser {
 	return &SQLServerStreamParser{
-		sqlserver: NewSQLServer(),
+		sqlserver: NewSQLServer().(*SQLServer),
 	}
 }
 

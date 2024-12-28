@@ -18,7 +18,7 @@ type SQLiteStreamParser struct {
 // NewSQLiteStreamParser creates a new SQLite stream parser
 func NewSQLiteStreamParser() *SQLiteStreamParser {
 	return &SQLiteStreamParser{
-		sqlite: NewSQLite(),
+		sqlite: NewSQLite().(*SQLite),
 	}
 }
 
