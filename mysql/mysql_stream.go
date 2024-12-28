@@ -248,75 +248,73 @@ func (p *MySQLStreamParser) parseStatement(statement string) (*sqlmapper.SchemaO
 
 // GenerateStream implements the StreamParser interface
 func (p *MySQLStreamParser) GenerateStream(schema *sqlmapper.Schema, writer io.Writer) error {
-	// Generate tables
+	if schema == nil {
+		return fmt.Errorf("schema cannot be nil")
+	}
+
+	// Write tables
 	for _, table := range schema.Tables {
-		sql := p.mysql.generateTableSQL(table)
-		_, err := writer.Write([]byte(sql + ";\n\n"))
-		if err != nil {
+		stmt := p.mysql.generateTableSQL(table)
+		if _, err := writer.Write([]byte(stmt + ";\n\n")); err != nil {
 			return err
 		}
 
 		// Generate indexes for this table
 		for _, index := range table.Indexes {
-			sql := p.mysql.generateIndexSQL(table.Name, index)
-			_, err := writer.Write([]byte(sql + ";\n"))
-			if err != nil {
+			stmt := p.mysql.generateIndexSQL(table.Name, index)
+			if _, err := writer.Write([]byte(stmt + ";\n")); err != nil {
 				return err
 			}
 		}
 	}
 
-	// Generate views
+	// Write views
 	for _, view := range schema.Views {
-		sql := fmt.Sprintf("CREATE VIEW %s AS %s", view.Name, view.Definition)
-		_, err := writer.Write([]byte(sql + ";\n\n"))
-		if err != nil {
+		stmt := fmt.Sprintf("CREATE VIEW %s AS %s", view.Name, view.Definition)
+		if _, err := writer.Write([]byte(stmt + ";\n\n")); err != nil {
 			return err
 		}
 	}
 
-	// Generate functions
+	// Write functions
 	for _, function := range schema.Functions {
 		if !function.IsProc {
-			sql := fmt.Sprintf("CREATE FUNCTION %s(", function.Name)
+			stmt := fmt.Sprintf("CREATE FUNCTION %s(", function.Name)
 			for i, param := range function.Parameters {
 				if i > 0 {
-					sql += ", "
+					stmt += ", "
 				}
-				sql += fmt.Sprintf("%s %s", param.Name, param.DataType)
+				stmt += fmt.Sprintf("%s %s", param.Name, param.DataType)
 			}
-			sql += fmt.Sprintf(") RETURNS %s\n%s", function.Returns, function.Body)
-			_, err := writer.Write([]byte(sql + ";\n\n"))
-			if err != nil {
+			stmt += fmt.Sprintf(") RETURNS %s\n%s", function.Returns, function.Body)
+			if _, err := writer.Write([]byte(stmt + ";\n\n")); err != nil {
 				return err
 			}
 		}
 	}
 
-	// Generate procedures
+	// Write procedures
 	for _, function := range schema.Functions {
 		if function.IsProc {
-			sql := fmt.Sprintf("CREATE PROCEDURE %s(", function.Name)
+			stmt := fmt.Sprintf("CREATE PROCEDURE %s(", function.Name)
 			for i, param := range function.Parameters {
 				if i > 0 {
-					sql += ", "
+					stmt += ", "
 				}
-				sql += fmt.Sprintf("%s %s", param.Name, param.DataType)
+				stmt += fmt.Sprintf("%s %s", param.Name, param.DataType)
 			}
-			sql += fmt.Sprintf(")\n%s", function.Body)
-			_, err := writer.Write([]byte(sql + ";\n\n"))
-			if err != nil {
+			stmt += fmt.Sprintf(")\n%s", function.Body)
+			if _, err := writer.Write([]byte(stmt + ";\n\n")); err != nil {
 				return err
 			}
 		}
 	}
 
-	// Generate triggers
+	// Write triggers
 	for _, trigger := range schema.Triggers {
-		sql := fmt.Sprintf("CREATE TRIGGER %s %s %s ON %s\n%s",
+		stmt := fmt.Sprintf("CREATE TRIGGER %s %s %s ON %s\n%s",
 			trigger.Name, trigger.Timing, trigger.Event, trigger.Table, trigger.Body)
-		_, err := writer.Write([]byte(sql + ";\n\n"))
-		if err != nil {
+		if _, err := writer.Write([]byte(stmt + ";\n\n")); err != nil {
 			return err
 		}
 	}
@@ -324,8 +322,8 @@ func (p *MySQLStreamParser) GenerateStream(schema *sqlmapper.Schema, writer io.W
 	return nil
 }
 
+// parseTableStatement parses a CREATE TABLE statement
 func (p *MySQLStreamParser) parseTableStatement(statement string) (*sqlmapper.Table, error) {
-	// Create a temporary schema to parse the table
 	tempSchema := &sqlmapper.Schema{}
 	p.mysql.schema = tempSchema
 
@@ -340,8 +338,8 @@ func (p *MySQLStreamParser) parseTableStatement(statement string) (*sqlmapper.Ta
 	return &tempSchema.Tables[0], nil
 }
 
+// parseViewStatement parses a CREATE VIEW statement
 func (p *MySQLStreamParser) parseViewStatement(statement string) (*sqlmapper.View, error) {
-	// Create a temporary schema to parse the view
 	tempSchema := &sqlmapper.Schema{}
 	p.mysql.schema = tempSchema
 
@@ -356,8 +354,8 @@ func (p *MySQLStreamParser) parseViewStatement(statement string) (*sqlmapper.Vie
 	return &tempSchema.Views[0], nil
 }
 
+// parseFunctionStatement parses a CREATE FUNCTION statement
 func (p *MySQLStreamParser) parseFunctionStatement(statement string) (*sqlmapper.Function, error) {
-	// Create a temporary schema to parse the function
 	tempSchema := &sqlmapper.Schema{}
 	p.mysql.schema = tempSchema
 
@@ -369,11 +367,17 @@ func (p *MySQLStreamParser) parseFunctionStatement(statement string) (*sqlmapper
 		return nil, fmt.Errorf("no function found in statement")
 	}
 
-	return &tempSchema.Functions[0], nil
+	for _, fn := range tempSchema.Functions {
+		if !fn.IsProc {
+			return &fn, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no function found in statement")
 }
 
-func (p *MySQLStreamParser) parseProcedureStatement(statement string) (*sqlmapper.Function, error) {
-	// Create a temporary schema to parse the procedure
+// parseProcedureStatement parses a CREATE PROCEDURE statement
+func (p *MySQLStreamParser) parseProcedureStatement(statement string) (*sqlmapper.Procedure, error) {
 	tempSchema := &sqlmapper.Schema{}
 	p.mysql.schema = tempSchema
 
@@ -385,11 +389,23 @@ func (p *MySQLStreamParser) parseProcedureStatement(statement string) (*sqlmappe
 		return nil, fmt.Errorf("no procedure found in statement")
 	}
 
-	return &tempSchema.Functions[0], nil
+	for _, fn := range tempSchema.Functions {
+		if fn.IsProc {
+			proc := &sqlmapper.Procedure{
+				Name:       fn.Name,
+				Parameters: fn.Parameters,
+				Body:       fn.Body,
+				Schema:     fn.Schema,
+			}
+			return proc, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no procedure found in statement")
 }
 
+// parseTriggerStatement parses a CREATE TRIGGER statement
 func (p *MySQLStreamParser) parseTriggerStatement(statement string) (*sqlmapper.Trigger, error) {
-	// Create a temporary schema to parse the trigger
 	tempSchema := &sqlmapper.Schema{}
 	p.mysql.schema = tempSchema
 
