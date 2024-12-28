@@ -11,7 +11,6 @@ SQLMapper is a powerful SQL schema parser and generator that supports multiple d
   - SQL Server
   - Oracle
 - Schema parsing and generation
-- Parallel stream processing for large SQL files
 - Support for various SQL objects:
   - Tables
   - Views
@@ -20,6 +19,15 @@ SQLMapper is a powerful SQL schema parser and generator that supports multiple d
   - Triggers
   - Indexes
   - Sequences
+
+## Development Status
+
+- Basic schema parsing and generation is implemented
+- Stream processing feature is under development
+  - Basic stream parsing functionality is implemented
+  - Tests for stream processing are pending
+  - Parallel stream processing is planned
+- Documentation will be updated as features are completed
 
 ## Installation
 
@@ -57,39 +65,6 @@ func main() {
 }
 ```
 
-### Stream Processing
-
-For large SQL files, you can use the stream processing feature with parallel execution:
-
-```go
-package main
-
-import (
-    "fmt"
-    "github.com/mstgnz/sqlmapper"
-)
-
-func main() {
-    // Create a stream parser
-    parser := sqlmapper.NewStreamParser(sqlmapper.MySQL)
-    
-    // Process SQL stream with parallel execution
-    err := parser.ParseStreamParallel(sqlContent, 4, func(obj interface{}) error {
-        switch v := obj.(type) {
-        case sqlmapper.Table:
-            fmt.Printf("Processed table: %s\n", v.Name)
-        case sqlmapper.View:
-            fmt.Printf("Processed view: %s\n", v.Name)
-        }
-        return nil
-    })
-    
-    if err != nil {
-        panic(err)
-    }
-}
-```
-
 ## Supported SQL Objects
 
 - Tables
@@ -98,13 +73,12 @@ func main() {
   - Foreign keys
   - Unique constraints
   - Check constraints
-  - Indexes
 - Views
 - Functions
-- Stored Procedures
+- Procedures
 - Triggers
+- Indexes
 - Sequences
-- User-defined Types
 
 ## Contributing
 
