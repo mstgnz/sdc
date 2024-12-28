@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/mstgnz/sqlmapper"
@@ -609,26 +610,297 @@ func (s *SQLServer) parseCreateTrigger(stmt []byte) (sqlmapper.Trigger, error) {
 }
 
 func (s *SQLServer) parseTables(statement string) error {
-	// TODO: Implement table parsing
+	re := regexp.MustCompile(`CREATE\s+TABLE\s+([.\w\[\]]+)\s*\((.*?)\)(?:\s+ON\s+(\w+))?`)
+	matches := re.FindStringSubmatch(statement)
+
+	if len(matches) > 2 {
+		tableName := matches[1]
+		columnDefs := matches[2]
+
+		table := sqlmapper.Table{}
+
+		// Parse schema if exists
+		parts := strings.Split(strings.Trim(tableName, "[]"), ".")
+		if len(parts) > 1 {
+			table.Schema = parts[0]
+			table.Name = parts[1]
+		} else {
+			table.Name = tableName
+		}
+
+		// Parse filegroup if exists
+		if len(matches) > 3 && matches[3] != "" {
+			table.TableSpace = matches[3]
+		}
+
+		// Parse columns and constraints
+		columns := strings.Split(columnDefs, ",")
+		for _, col := range columns {
+			col = strings.TrimSpace(col)
+			if strings.HasPrefix(strings.ToUpper(col), "CONSTRAINT") {
+				continue // Skip constraints for now
+			}
+
+			parts := strings.Fields(col)
+			if len(parts) < 2 {
+				continue
+			}
+
+			column := sqlmapper.Column{
+				Name:       strings.Trim(parts[0], "[]"),
+				DataType:   parts[1],
+				IsNullable: true,
+			}
+
+			// Parse length/precision
+			if strings.Contains(column.DataType, "(") {
+				re := regexp.MustCompile(`(\w+)\((\d+|MAX)(?:,(\d+))?\)`)
+				if matches := re.FindStringSubmatch(column.DataType); len(matches) > 2 {
+					column.DataType = matches[1]
+					if matches[2] == "MAX" {
+						column.Length = -1
+					} else {
+						fmt.Sscanf(matches[2], "%d", &column.Length)
+					}
+					if len(matches) > 3 && matches[3] != "" {
+						fmt.Sscanf(matches[3], "%d", &column.Scale)
+					}
+				}
+			}
+
+			// Parse constraints
+			if strings.Contains(strings.ToUpper(col), "NOT NULL") {
+				column.IsNullable = false
+			}
+			if strings.Contains(strings.ToUpper(col), "PRIMARY KEY") {
+				column.IsPrimaryKey = true
+			}
+			if strings.Contains(strings.ToUpper(col), "IDENTITY") {
+				column.AutoIncrement = true
+			}
+			if strings.Contains(strings.ToUpper(col), "UNIQUE") {
+				column.IsUnique = true
+			}
+			if strings.Contains(strings.ToUpper(col), "DEFAULT") {
+				re := regexp.MustCompile(`DEFAULT\s+([^,\s]+)`)
+				if matches := re.FindStringSubmatch(col); len(matches) > 1 {
+					column.DefaultValue = matches[1]
+				}
+			}
+
+			table.Columns = append(table.Columns, column)
+		}
+
+		s.schema.Tables = append(s.schema.Tables, table)
+	}
+
 	return nil
 }
 
 func (s *SQLServer) parseViews(statement string) error {
-	// TODO: Implement view parsing
+	re := regexp.MustCompile(`CREATE\s+VIEW\s+([.\w\[\]]+)\s+AS\s+(.+)$`)
+	matches := re.FindStringSubmatch(statement)
+
+	if len(matches) > 2 {
+		viewName := matches[1]
+		view := sqlmapper.View{
+			Definition: matches[2],
+		}
+
+		// Parse schema if exists
+		parts := strings.Split(strings.Trim(viewName, "[]"), ".")
+		if len(parts) > 1 {
+			view.Schema = parts[0]
+			view.Name = parts[1]
+		} else {
+			view.Name = viewName
+		}
+
+		s.schema.Views = append(s.schema.Views, view)
+	}
+
 	return nil
 }
 
 func (s *SQLServer) parseFunctions(statement string) error {
-	// TODO: Implement function parsing
+	re := regexp.MustCompile(`CREATE\s+(FUNCTION|PROCEDURE)\s+([.\w\[\]]+)\s*\((.*?)\)(?:\s+RETURNS\s+(\w+(?:\s*\([^)]*\))?))?\s+AS\s+BEGIN\s+(.*?)\s+END`)
+	matches := re.FindStringSubmatch(statement)
+
+	if len(matches) > 4 {
+		isProc := matches[1] == "PROCEDURE"
+		functionName := matches[2]
+		function := sqlmapper.Function{
+			IsProc: isProc,
+			Body:   matches[5],
+		}
+
+		if !isProc && matches[4] != "" {
+			function.Returns = matches[4]
+		}
+
+		// Parse schema if exists
+		parts := strings.Split(strings.Trim(functionName, "[]"), ".")
+		if len(parts) > 1 {
+			function.Schema = parts[0]
+			function.Name = parts[1]
+		} else {
+			function.Name = functionName
+		}
+
+		// Parse parameters
+		if matches[3] != "" {
+			params := strings.Split(matches[3], ",")
+			for _, param := range params {
+				parts := strings.Fields(strings.TrimSpace(param))
+				if len(parts) >= 2 {
+					parameter := sqlmapper.Parameter{
+						Name:     strings.TrimPrefix(parts[0], "@"),
+						DataType: parts[1],
+					}
+					function.Parameters = append(function.Parameters, parameter)
+				}
+			}
+		}
+
+		s.schema.Functions = append(s.schema.Functions, function)
+	}
+
 	return nil
 }
 
 func (s *SQLServer) parseTriggers(statement string) error {
-	// TODO: Implement trigger parsing
+	re := regexp.MustCompile(`CREATE\s+TRIGGER\s+([.\w\[\]]+)\s+ON\s+([.\w\[\]]+)\s+(AFTER|INSTEAD\s+OF|FOR)\s+(INSERT|UPDATE|DELETE)(?:\s*,\s*(INSERT|UPDATE|DELETE))*\s+AS\s+BEGIN\s+(.*?)\s+END`)
+	matches := re.FindStringSubmatch(statement)
+
+	if len(matches) > 6 {
+		triggerName := matches[1]
+		trigger := sqlmapper.Trigger{
+			Table:  matches[2],
+			Timing: matches[3],
+			Event:  matches[4],
+			Body:   matches[6],
+		}
+
+		// Parse schema if exists
+		parts := strings.Split(strings.Trim(triggerName, "[]"), ".")
+		if len(parts) > 1 {
+			trigger.Schema = parts[0]
+			trigger.Name = parts[1]
+		} else {
+			trigger.Name = triggerName
+		}
+
+		s.schema.Triggers = append(s.schema.Triggers, trigger)
+	}
+
 	return nil
 }
 
 func (s *SQLServer) parseIndexes(statement string) error {
-	// TODO: Implement index parsing
+	re := regexp.MustCompile(`CREATE\s+(?:(UNIQUE|CLUSTERED|NONCLUSTERED)\s+)*INDEX\s+([.\w\[\]]+)\s+ON\s+([.\w\[\]]+)\s*\((.*?)\)(?:\s+INCLUDE\s*\((.*?)\))?(?:\s+WITH\s*\((.*?)\))?(?:\s+ON\s+(\w+))?`)
+	matches := re.FindStringSubmatch(statement)
+
+	if len(matches) > 4 {
+		indexName := matches[2]
+		tableName := matches[3]
+		columns := strings.Split(matches[4], ",")
+
+		// Find the table
+		for i, table := range s.schema.Tables {
+			if table.Name == tableName || fmt.Sprintf("%s.%s", table.Schema, table.Name) == tableName {
+				index := sqlmapper.Index{
+					Name:        strings.Trim(indexName, "[]"),
+					Columns:     make([]string, len(columns)),
+					IsUnique:    strings.Contains(matches[1], "UNIQUE"),
+					IsClustered: strings.Contains(matches[1], "CLUSTERED"),
+				}
+
+				// Clean column names
+				for j, col := range columns {
+					index.Columns[j] = strings.Trim(strings.TrimSpace(col), "[]")
+				}
+
+				// Skip INCLUDE columns since they're not supported in the common schema
+
+				// Parse filegroup
+				if len(matches) > 7 && matches[7] != "" {
+					index.TableSpace = matches[7]
+				}
+
+				s.schema.Tables[i].Indexes = append(s.schema.Tables[i].Indexes, index)
+				break
+			}
+		}
+	}
+
 	return nil
+}
+
+// generateTableSQL generates SQL for a table
+func (s *SQLServer) generateTableSQL(table sqlmapper.Table) string {
+	sql := "CREATE TABLE " + table.Name + " (\n"
+
+	// Generate columns
+	for i, col := range table.Columns {
+		sql += "    " + col.Name + " " + col.DataType
+		if col.Length > 0 {
+			if strings.ToUpper(col.DataType) == "NVARCHAR" || strings.ToUpper(col.DataType) == "NCHAR" {
+				if col.Length == -1 {
+					sql += "(MAX)"
+				} else {
+					sql += fmt.Sprintf("(%d)", col.Length)
+				}
+			} else {
+				sql += fmt.Sprintf("(%d", col.Length)
+				if col.Scale > 0 {
+					sql += fmt.Sprintf(",%d", col.Scale)
+				}
+				sql += ")"
+			}
+		}
+
+		if col.IsPrimaryKey {
+			sql += " PRIMARY KEY"
+			if col.AutoIncrement {
+				sql += " IDENTITY(1,1)"
+			}
+		}
+		if !col.IsNullable {
+			sql += " NOT NULL"
+		}
+		if col.IsUnique {
+			sql += " UNIQUE"
+		}
+		if col.DefaultValue != "" {
+			sql += " DEFAULT " + col.DefaultValue
+		}
+
+		if i < len(table.Columns)-1 {
+			sql += ",\n"
+		}
+	}
+
+	sql += "\n)"
+
+	return sql
+}
+
+// generateIndexSQL generates SQL for an index
+func (s *SQLServer) generateIndexSQL(tableName string, index sqlmapper.Index) string {
+	var sql string
+	if index.IsClustered {
+		sql = "CREATE CLUSTERED "
+	} else {
+		sql = "CREATE NONCLUSTERED "
+	}
+
+	if index.IsUnique {
+		sql += "UNIQUE INDEX "
+	} else {
+		sql += "INDEX "
+	}
+
+	sql += index.Name + " ON " + tableName + " (" + strings.Join(index.Columns, ", ") + ")"
+
+	return sql
 }

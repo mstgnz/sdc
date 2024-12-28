@@ -292,136 +292,78 @@ func (p *SQLServerStreamParser) parseStatement(statement string) (*sqlmapper.Sch
 
 // GenerateStream implements the StreamParser interface
 func (p *SQLServerStreamParser) GenerateStream(schema *sqlmapper.Schema, writer io.Writer) error {
-	// Generate tables
+	if schema == nil {
+		return fmt.Errorf("schema cannot be nil")
+	}
+
+	// Write tables
 	for _, table := range schema.Tables {
-		sql := "CREATE TABLE " + table.Name + " (\n"
-
-		// Generate columns
-		for i, col := range table.Columns {
-			sql += "    " + col.Name + " " + col.DataType
-			if col.Length > 0 {
-				if strings.ToUpper(col.DataType) == "NVARCHAR" || strings.ToUpper(col.DataType) == "NCHAR" {
-					if col.Length == -1 {
-						sql += "(MAX)"
-					} else {
-						sql += fmt.Sprintf("(%d)", col.Length)
-					}
-				} else {
-					sql += fmt.Sprintf("(%d", col.Length)
-					if col.Scale > 0 {
-						sql += fmt.Sprintf(",%d", col.Scale)
-					}
-					sql += ")"
-				}
-			}
-
-			if col.IsPrimaryKey {
-				sql += " PRIMARY KEY"
-				if col.AutoIncrement {
-					sql += " IDENTITY(1,1)"
-				}
-			}
-			if !col.IsNullable {
-				sql += " NOT NULL"
-			}
-			if col.IsUnique {
-				sql += " UNIQUE"
-			}
-			if col.DefaultValue != "" {
-				sql += " DEFAULT " + col.DefaultValue
-			}
-
-			if i < len(table.Columns)-1 {
-				sql += ",\n"
-			}
-		}
-
-		sql += "\n);\nGO\n\n"
-
-		_, err := writer.Write([]byte(sql))
-		if err != nil {
+		stmt := p.sqlserver.generateTableSQL(table)
+		if _, err := writer.Write([]byte(stmt + "\nGO\n\n")); err != nil {
 			return err
 		}
 
-		// Generate indexes
+		// Generate indexes for this table
 		for _, index := range table.Indexes {
-			if index.IsClustered {
-				sql = "CREATE CLUSTERED "
-			} else {
-				sql = "CREATE NONCLUSTERED "
-			}
-
-			if index.IsUnique {
-				sql += "UNIQUE INDEX "
-			} else {
-				sql += "INDEX "
-			}
-
-			sql += index.Name + " ON " + table.Name + " (" + strings.Join(index.Columns, ", ") + ");\nGO\n"
-
-			_, err := writer.Write([]byte(sql))
-			if err != nil {
+			stmt := p.sqlserver.generateIndexSQL(table.Name, index)
+			if _, err := writer.Write([]byte(stmt + "\nGO\n")); err != nil {
 				return err
 			}
 		}
 	}
 
-	// Generate views
+	// Write views
 	for _, view := range schema.Views {
-		sql := fmt.Sprintf("CREATE VIEW %s AS\n%s;\nGO\n\n", view.Name, view.Definition)
-		_, err := writer.Write([]byte(sql))
-		if err != nil {
+		stmt := fmt.Sprintf("CREATE VIEW %s AS\n%s", view.Name, view.Definition)
+		if _, err := writer.Write([]byte(stmt + "\nGO\n\n")); err != nil {
 			return err
 		}
 	}
 
-	// Generate functions
+	// Write functions
 	for _, function := range schema.Functions {
 		if !function.IsProc {
-			sql := fmt.Sprintf("CREATE FUNCTION %s(", function.Name)
+			stmt := fmt.Sprintf("CREATE FUNCTION %s(", function.Name)
 			for i, param := range function.Parameters {
 				if i > 0 {
-					sql += ", "
+					stmt += ", "
 				}
-				sql += fmt.Sprintf("@%s %s", param.Name, param.DataType)
+				stmt += fmt.Sprintf("@%s %s", param.Name, param.DataType)
 			}
-			sql += fmt.Sprintf(")\nRETURNS %s\nAS\nBEGIN\n%s\nEND;\nGO\n\n",
+			stmt += fmt.Sprintf(")\nRETURNS %s\nAS\nBEGIN\n%s\nEND",
 				function.Returns, function.Body)
-			_, err := writer.Write([]byte(sql))
-			if err != nil {
+			if _, err := writer.Write([]byte(stmt + "\nGO\n\n")); err != nil {
 				return err
 			}
 		}
 	}
 
-	// Generate procedures
+	// Write procedures
 	for _, function := range schema.Functions {
 		if function.IsProc {
-			sql := fmt.Sprintf("CREATE PROCEDURE %s", function.Name)
+			stmt := fmt.Sprintf("CREATE PROCEDURE %s", function.Name)
 			if len(function.Parameters) > 0 {
-				sql += "(\n"
+				stmt += "("
 				for i, param := range function.Parameters {
 					if i > 0 {
-						sql += ",\n"
+						stmt += ", "
 					}
-					sql += fmt.Sprintf("    @%s %s", param.Name, param.DataType)
+					stmt += fmt.Sprintf("@%s %s", param.Name, param.DataType)
 				}
-				sql += "\n)"
+				stmt += ")"
 			}
-			sql += fmt.Sprintf("\nAS\nBEGIN\n%s\nEND;\nGO\n\n", function.Body)
-			_, err := writer.Write([]byte(sql))
-			if err != nil {
+			stmt += fmt.Sprintf("\nAS\nBEGIN\n%s\nEND", function.Body)
+			if _, err := writer.Write([]byte(stmt + "\nGO\n\n")); err != nil {
 				return err
 			}
 		}
 	}
 
-	// Generate triggers
+	// Write triggers
 	for _, trigger := range schema.Triggers {
-		sql := fmt.Sprintf("CREATE TRIGGER %s\nON %s\n%s %s\nAS\nBEGIN\n%s\nEND;\nGO\n\n",
+		stmt := fmt.Sprintf("CREATE TRIGGER %s ON %s\n%s %s\nAS\nBEGIN\n%s\nEND",
 			trigger.Name, trigger.Table, trigger.Timing, trigger.Event, trigger.Body)
-		_, err := writer.Write([]byte(sql))
-		if err != nil {
+		if _, err := writer.Write([]byte(stmt + "\nGO\n\n")); err != nil {
 			return err
 		}
 	}
@@ -429,8 +371,8 @@ func (p *SQLServerStreamParser) GenerateStream(schema *sqlmapper.Schema, writer 
 	return nil
 }
 
+// parseTableStatement parses a CREATE TABLE statement
 func (p *SQLServerStreamParser) parseTableStatement(statement string) (*sqlmapper.Table, error) {
-	// Create a temporary schema to parse the table
 	tempSchema := &sqlmapper.Schema{}
 	p.sqlserver.schema = tempSchema
 
@@ -445,8 +387,8 @@ func (p *SQLServerStreamParser) parseTableStatement(statement string) (*sqlmappe
 	return &tempSchema.Tables[0], nil
 }
 
+// parseViewStatement parses a CREATE VIEW statement
 func (p *SQLServerStreamParser) parseViewStatement(statement string) (*sqlmapper.View, error) {
-	// Create a temporary schema to parse the view
 	tempSchema := &sqlmapper.Schema{}
 	p.sqlserver.schema = tempSchema
 
@@ -461,8 +403,8 @@ func (p *SQLServerStreamParser) parseViewStatement(statement string) (*sqlmapper
 	return &tempSchema.Views[0], nil
 }
 
+// parseFunctionStatement parses a CREATE FUNCTION statement
 func (p *SQLServerStreamParser) parseFunctionStatement(statement string) (*sqlmapper.Function, error) {
-	// Create a temporary schema to parse the function
 	tempSchema := &sqlmapper.Schema{}
 	p.sqlserver.schema = tempSchema
 
@@ -474,11 +416,17 @@ func (p *SQLServerStreamParser) parseFunctionStatement(statement string) (*sqlma
 		return nil, fmt.Errorf("no function found in statement")
 	}
 
-	return &tempSchema.Functions[0], nil
+	for _, fn := range tempSchema.Functions {
+		if !fn.IsProc {
+			return &fn, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no function found in statement")
 }
 
-func (p *SQLServerStreamParser) parseProcedureStatement(statement string) (*sqlmapper.Function, error) {
-	// Create a temporary schema to parse the procedure
+// parseProcedureStatement parses a CREATE PROCEDURE statement
+func (p *SQLServerStreamParser) parseProcedureStatement(statement string) (*sqlmapper.Procedure, error) {
 	tempSchema := &sqlmapper.Schema{}
 	p.sqlserver.schema = tempSchema
 
@@ -490,11 +438,23 @@ func (p *SQLServerStreamParser) parseProcedureStatement(statement string) (*sqlm
 		return nil, fmt.Errorf("no procedure found in statement")
 	}
 
-	return &tempSchema.Functions[0], nil
+	for _, fn := range tempSchema.Functions {
+		if fn.IsProc {
+			proc := &sqlmapper.Procedure{
+				Name:       fn.Name,
+				Parameters: fn.Parameters,
+				Body:       fn.Body,
+				Schema:     fn.Schema,
+			}
+			return proc, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no procedure found in statement")
 }
 
+// parseTriggerStatement parses a CREATE TRIGGER statement
 func (p *SQLServerStreamParser) parseTriggerStatement(statement string) (*sqlmapper.Trigger, error) {
-	// Create a temporary schema to parse the trigger
 	tempSchema := &sqlmapper.Schema{}
 	p.sqlserver.schema = tempSchema
 
@@ -509,8 +469,8 @@ func (p *SQLServerStreamParser) parseTriggerStatement(statement string) (*sqlmap
 	return &tempSchema.Triggers[0], nil
 }
 
+// parseIndexStatement parses a CREATE INDEX statement
 func (p *SQLServerStreamParser) parseIndexStatement(statement string) (*sqlmapper.Index, error) {
-	// Create a temporary schema to parse the index
 	tempSchema := &sqlmapper.Schema{}
 	p.sqlserver.schema = tempSchema
 
@@ -518,12 +478,9 @@ func (p *SQLServerStreamParser) parseIndexStatement(statement string) (*sqlmappe
 		return nil, err
 	}
 
-	// Find the first table with indexes
-	for _, table := range tempSchema.Tables {
-		if len(table.Indexes) > 0 {
-			return &table.Indexes[0], nil
-		}
+	if len(tempSchema.Tables) == 0 || len(tempSchema.Tables[0].Indexes) == 0 {
+		return nil, fmt.Errorf("no index found in statement")
 	}
 
-	return nil, fmt.Errorf("no index found in statement")
+	return &tempSchema.Tables[0].Indexes[0], nil
 }
