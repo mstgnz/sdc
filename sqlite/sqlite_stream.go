@@ -232,87 +232,46 @@ func (p *SQLiteStreamParser) parseStatement(statement string) (*sqlmapper.Schema
 
 // GenerateStream implements the StreamParser interface
 func (p *SQLiteStreamParser) GenerateStream(schema *sqlmapper.Schema, writer io.Writer) error {
-	// Generate tables
+	if schema == nil {
+		return fmt.Errorf("schema cannot be nil")
+	}
+
+	// Write tables
 	for _, table := range schema.Tables {
-		sql := "CREATE TABLE " + table.Name + " (\n"
-
-		// Generate columns
-		for i, col := range table.Columns {
-			sql += "    " + col.Name + " " + col.DataType
-			if col.Length > 0 {
-				sql += fmt.Sprintf("(%d", col.Length)
-				if col.Scale > 0 {
-					sql += fmt.Sprintf(",%d", col.Scale)
-				}
-				sql += ")"
-			}
-
-			if col.IsPrimaryKey {
-				sql += " PRIMARY KEY"
-				if col.AutoIncrement {
-					sql += " AUTOINCREMENT"
-				}
-			}
-			if !col.IsNullable {
-				sql += " NOT NULL"
-			}
-			if col.IsUnique {
-				sql += " UNIQUE"
-			}
-			if col.DefaultValue != "" {
-				sql += " DEFAULT " + col.DefaultValue
-			}
-
-			if i < len(table.Columns)-1 {
-				sql += ",\n"
-			}
-		}
-
-		sql += "\n);\n\n"
-
-		_, err := writer.Write([]byte(sql))
-		if err != nil {
+		stmt := p.sqlite.generateTableSQL(table)
+		if _, err := writer.Write([]byte(stmt + ";\n\n")); err != nil {
 			return err
 		}
 
-		// Generate indexes
+		// Generate indexes for this table
 		for _, index := range table.Indexes {
-			if index.IsUnique {
-				sql = "CREATE UNIQUE INDEX "
-			} else {
-				sql = "CREATE INDEX "
-			}
-			sql += index.Name + " ON " + table.Name + " (" + strings.Join(index.Columns, ", ") + ");\n"
-
-			_, err := writer.Write([]byte(sql))
-			if err != nil {
+			stmt := p.sqlite.generateIndexSQL(table.Name, index)
+			if _, err := writer.Write([]byte(stmt + ";\n")); err != nil {
 				return err
 			}
 		}
 	}
 
-	// Generate views
+	// Write views
 	for _, view := range schema.Views {
-		sql := fmt.Sprintf("CREATE VIEW %s AS\n%s;\n\n", view.Name, view.Definition)
-		_, err := writer.Write([]byte(sql))
-		if err != nil {
+		stmt := fmt.Sprintf("CREATE VIEW %s AS %s", view.Name, view.Definition)
+		if _, err := writer.Write([]byte(stmt + ";\n\n")); err != nil {
 			return err
 		}
 	}
 
-	// Generate triggers
+	// Write triggers
 	for _, trigger := range schema.Triggers {
-		sql := fmt.Sprintf("CREATE TRIGGER %s\n%s %s ON %s\n",
+		stmt := fmt.Sprintf("CREATE TRIGGER %s %s %s ON %s\n",
 			trigger.Name, trigger.Timing, trigger.Event, trigger.Table)
 		if trigger.ForEachRow {
-			sql += "FOR EACH ROW\n"
+			stmt += "FOR EACH ROW\n"
 		}
 		if trigger.Condition != "" {
-			sql += "WHEN " + trigger.Condition + "\n"
+			stmt += "WHEN " + trigger.Condition + "\n"
 		}
-		sql += "BEGIN\n" + trigger.Body + "\nEND;\n\n"
-		_, err := writer.Write([]byte(sql))
-		if err != nil {
+		stmt += fmt.Sprintf("BEGIN\n%s\nEND", trigger.Body)
+		if _, err := writer.Write([]byte(stmt + ";\n\n")); err != nil {
 			return err
 		}
 	}
@@ -320,8 +279,8 @@ func (p *SQLiteStreamParser) GenerateStream(schema *sqlmapper.Schema, writer io.
 	return nil
 }
 
+// parseTableStatement parses a CREATE TABLE statement
 func (p *SQLiteStreamParser) parseTableStatement(statement string) (*sqlmapper.Table, error) {
-	// Create a temporary schema to parse the table
 	tempSchema := &sqlmapper.Schema{}
 	p.sqlite.schema = tempSchema
 
@@ -336,8 +295,8 @@ func (p *SQLiteStreamParser) parseTableStatement(statement string) (*sqlmapper.T
 	return &tempSchema.Tables[0], nil
 }
 
+// parseViewStatement parses a CREATE VIEW statement
 func (p *SQLiteStreamParser) parseViewStatement(statement string) (*sqlmapper.View, error) {
-	// Create a temporary schema to parse the view
 	tempSchema := &sqlmapper.Schema{}
 	p.sqlite.schema = tempSchema
 
@@ -352,8 +311,8 @@ func (p *SQLiteStreamParser) parseViewStatement(statement string) (*sqlmapper.Vi
 	return &tempSchema.Views[0], nil
 }
 
+// parseIndexStatement parses a CREATE INDEX statement
 func (p *SQLiteStreamParser) parseIndexStatement(statement string) (*sqlmapper.Index, error) {
-	// Create a temporary schema to parse the index
 	tempSchema := &sqlmapper.Schema{}
 	p.sqlite.schema = tempSchema
 
@@ -361,18 +320,15 @@ func (p *SQLiteStreamParser) parseIndexStatement(statement string) (*sqlmapper.I
 		return nil, err
 	}
 
-	// Find the first table with indexes
-	for _, table := range tempSchema.Tables {
-		if len(table.Indexes) > 0 {
-			return &table.Indexes[0], nil
-		}
+	if len(tempSchema.Tables) == 0 || len(tempSchema.Tables[0].Indexes) == 0 {
+		return nil, fmt.Errorf("no index found in statement")
 	}
 
-	return nil, fmt.Errorf("no index found in statement")
+	return &tempSchema.Tables[0].Indexes[0], nil
 }
 
+// parseTriggerStatement parses a CREATE TRIGGER statement
 func (p *SQLiteStreamParser) parseTriggerStatement(statement string) (*sqlmapper.Trigger, error) {
-	// Create a temporary schema to parse the trigger
 	tempSchema := &sqlmapper.Schema{}
 	p.sqlite.schema = tempSchema
 

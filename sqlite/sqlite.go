@@ -5,6 +5,7 @@ package sqlite
 import (
 	"bytes"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/mstgnz/sqlmapper"
@@ -391,26 +392,222 @@ func (s *SQLite) Generate(schema *sqlmapper.Schema) (string, error) {
 }
 
 func (s *SQLite) parseTables(statement string) error {
-	// TODO: Implement table parsing
+	re := regexp.MustCompile(`CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([.\w]+)\s*\((.*?)\)`)
+	matches := re.FindStringSubmatch(statement)
+
+	if len(matches) > 2 {
+		tableName := matches[1]
+		columnDefs := matches[2]
+
+		table := sqlmapper.Table{}
+
+		// Parse schema if exists
+		parts := strings.Split(tableName, ".")
+		if len(parts) > 1 {
+			table.Schema = parts[0]
+			table.Name = parts[1]
+		} else {
+			table.Name = tableName
+		}
+
+		// Parse columns and constraints
+		columns := strings.Split(columnDefs, ",")
+		for _, col := range columns {
+			col = strings.TrimSpace(col)
+			if strings.HasPrefix(strings.ToUpper(col), "CONSTRAINT") {
+				continue // Skip constraints for now
+			}
+
+			parts := strings.Fields(col)
+			if len(parts) < 2 {
+				continue
+			}
+
+			column := sqlmapper.Column{
+				Name:       parts[0],
+				DataType:   parts[1],
+				IsNullable: true,
+			}
+
+			// Parse length/precision
+			if strings.Contains(column.DataType, "(") {
+				re := regexp.MustCompile(`(\w+)\((\d+)(?:,(\d+))?\)`)
+				if matches := re.FindStringSubmatch(column.DataType); len(matches) > 2 {
+					column.DataType = matches[1]
+					fmt.Sscanf(matches[2], "%d", &column.Length)
+					if len(matches) > 3 && matches[3] != "" {
+						fmt.Sscanf(matches[3], "%d", &column.Scale)
+					}
+				}
+			}
+
+			// Parse constraints
+			if strings.Contains(strings.ToUpper(col), "NOT NULL") {
+				column.IsNullable = false
+			}
+			if strings.Contains(strings.ToUpper(col), "PRIMARY KEY") {
+				column.IsPrimaryKey = true
+				if strings.Contains(strings.ToUpper(col), "AUTOINCREMENT") {
+					column.AutoIncrement = true
+				}
+			}
+			if strings.Contains(strings.ToUpper(col), "UNIQUE") {
+				column.IsUnique = true
+			}
+			if strings.Contains(strings.ToUpper(col), "DEFAULT") {
+				re := regexp.MustCompile(`DEFAULT\s+([^,\s]+)`)
+				if matches := re.FindStringSubmatch(col); len(matches) > 1 {
+					column.DefaultValue = matches[1]
+				}
+			}
+
+			table.Columns = append(table.Columns, column)
+		}
+
+		s.schema.Tables = append(s.schema.Tables, table)
+	}
+
 	return nil
 }
 
 func (s *SQLite) parseViews(statement string) error {
-	// TODO: Implement view parsing
-	return nil
-}
+	re := regexp.MustCompile(`CREATE(?:\s+TEMP|\s+TEMPORARY)?\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?([.\w]+)\s+AS\s+(.+)$`)
+	matches := re.FindStringSubmatch(statement)
 
-func (s *SQLite) parseFunctions(statement string) error {
-	// TODO: Implement function parsing
+	if len(matches) > 2 {
+		viewName := matches[1]
+		view := sqlmapper.View{
+			Definition: matches[2],
+		}
+
+		// Parse schema if exists
+		parts := strings.Split(viewName, ".")
+		if len(parts) > 1 {
+			view.Schema = parts[0]
+			view.Name = parts[1]
+		} else {
+			view.Name = viewName
+		}
+
+		s.schema.Views = append(s.schema.Views, view)
+	}
+
 	return nil
 }
 
 func (s *SQLite) parseTriggers(statement string) error {
-	// TODO: Implement trigger parsing
+	re := regexp.MustCompile(`CREATE\s+TRIGGER\s+(?:IF\s+NOT\s+EXISTS\s+)?([.\w]+)\s+(BEFORE|AFTER|INSTEAD\s+OF)\s+(DELETE|INSERT|UPDATE(?:\s+OF\s+[^ON]+)?)\s+ON\s+([.\w]+)(?:\s+FOR\s+EACH\s+ROW)?(?:\s+WHEN\s+([^BEGIN]+))?\s+BEGIN\s+(.*?)\s+END`)
+	matches := re.FindStringSubmatch(statement)
+
+	if len(matches) > 6 {
+		triggerName := matches[1]
+		trigger := sqlmapper.Trigger{
+			Timing:     matches[2],
+			Event:      matches[3],
+			Table:      matches[4],
+			Condition:  matches[5],
+			Body:       matches[6],
+			ForEachRow: strings.Contains(statement, "FOR EACH ROW"),
+		}
+
+		// Parse schema if exists
+		parts := strings.Split(triggerName, ".")
+		if len(parts) > 1 {
+			trigger.Schema = parts[0]
+			trigger.Name = parts[1]
+		} else {
+			trigger.Name = triggerName
+		}
+
+		s.schema.Triggers = append(s.schema.Triggers, trigger)
+	}
+
 	return nil
 }
 
 func (s *SQLite) parseIndexes(statement string) error {
-	// TODO: Implement index parsing
+	re := regexp.MustCompile(`CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?([.\w]+)\s+ON\s+([.\w]+)\s*\((.*?)\)`)
+	matches := re.FindStringSubmatch(statement)
+
+	if len(matches) > 3 {
+		indexName := matches[1]
+		tableName := matches[2]
+		columns := strings.Split(matches[3], ",")
+
+		// Find the table
+		for i, table := range s.schema.Tables {
+			if table.Name == tableName || fmt.Sprintf("%s.%s", table.Schema, table.Name) == tableName {
+				index := sqlmapper.Index{
+					Name:     indexName,
+					Columns:  make([]string, len(columns)),
+					IsUnique: strings.Contains(statement, "UNIQUE"),
+				}
+
+				// Clean column names
+				for j, col := range columns {
+					index.Columns[j] = strings.TrimSpace(col)
+				}
+
+				s.schema.Tables[i].Indexes = append(s.schema.Tables[i].Indexes, index)
+				break
+			}
+		}
+	}
+
 	return nil
+}
+
+// generateTableSQL generates SQL for a table
+func (s *SQLite) generateTableSQL(table sqlmapper.Table) string {
+	sql := "CREATE TABLE " + table.Name + " (\n"
+
+	// Generate columns
+	for i, col := range table.Columns {
+		sql += "    " + col.Name + " " + col.DataType
+		if col.Length > 0 {
+			sql += fmt.Sprintf("(%d", col.Length)
+			if col.Scale > 0 {
+				sql += fmt.Sprintf(",%d", col.Scale)
+			}
+			sql += ")"
+		}
+
+		if col.IsPrimaryKey {
+			sql += " PRIMARY KEY"
+			if col.AutoIncrement {
+				sql += " AUTOINCREMENT"
+			}
+		}
+		if !col.IsNullable {
+			sql += " NOT NULL"
+		}
+		if col.IsUnique {
+			sql += " UNIQUE"
+		}
+		if col.DefaultValue != "" {
+			sql += " DEFAULT " + col.DefaultValue
+		}
+
+		if i < len(table.Columns)-1 {
+			sql += ",\n"
+		}
+	}
+
+	sql += "\n)"
+
+	return sql
+}
+
+// generateIndexSQL generates SQL for an index
+func (s *SQLite) generateIndexSQL(tableName string, index sqlmapper.Index) string {
+	var sql string
+	if index.IsUnique {
+		sql = "CREATE UNIQUE INDEX "
+	} else {
+		sql = "CREATE INDEX "
+	}
+
+	sql += index.Name + " ON " + tableName + " (" + strings.Join(index.Columns, ", ") + ")"
+
+	return sql
 }
