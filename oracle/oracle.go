@@ -558,36 +558,376 @@ func (o *Oracle) Generate(schema *sqlmapper.Schema) (string, error) {
 }
 
 func (o *Oracle) parseTables(statement string) error {
-	// TODO: Implement table parsing
+	re := regexp.MustCompile(`CREATE\s+TABLE\s+([.\w]+)\s*\((.*?)\)(?:\s+TABLESPACE\s+(\w+))?`)
+	matches := re.FindStringSubmatch(statement)
+
+	if len(matches) > 2 {
+		tableName := matches[1]
+		columnDefs := matches[2]
+
+		table := sqlmapper.Table{}
+
+		// Parse schema if exists
+		parts := strings.Split(tableName, ".")
+		if len(parts) > 1 {
+			table.Schema = parts[0]
+			table.Name = parts[1]
+		} else {
+			table.Name = tableName
+		}
+
+		// Parse tablespace if exists
+		if len(matches) > 3 && matches[3] != "" {
+			table.TableSpace = matches[3]
+		}
+
+		// Parse columns and constraints
+		columns := strings.Split(columnDefs, ",")
+		for _, col := range columns {
+			col = strings.TrimSpace(col)
+			if strings.HasPrefix(strings.ToUpper(col), "CONSTRAINT") {
+				continue // Skip constraints for now
+			}
+
+			parts := strings.Fields(col)
+			if len(parts) < 2 {
+				continue
+			}
+
+			column := sqlmapper.Column{
+				Name:       parts[0],
+				DataType:   parts[1],
+				IsNullable: true,
+			}
+
+			// Parse length/precision
+			if strings.Contains(column.DataType, "(") {
+				re := regexp.MustCompile(`(\w+)\((\d+)(?:,(\d+))?\)`)
+				if matches := re.FindStringSubmatch(column.DataType); len(matches) > 2 {
+					column.DataType = matches[1]
+					fmt.Sscanf(matches[2], "%d", &column.Length)
+					if len(matches) > 3 && matches[3] != "" {
+						fmt.Sscanf(matches[3], "%d", &column.Scale)
+					}
+				}
+			}
+
+			// Parse constraints
+			if strings.Contains(strings.ToUpper(col), "NOT NULL") {
+				column.IsNullable = false
+			}
+			if strings.Contains(strings.ToUpper(col), "PRIMARY KEY") {
+				column.IsPrimaryKey = true
+			}
+			if strings.Contains(strings.ToUpper(col), "UNIQUE") {
+				column.IsUnique = true
+			}
+			if strings.Contains(strings.ToUpper(col), "DEFAULT") {
+				re := regexp.MustCompile(`DEFAULT\s+([^,\s]+)`)
+				if matches := re.FindStringSubmatch(col); len(matches) > 1 {
+					column.DefaultValue = matches[1]
+				}
+			}
+
+			table.Columns = append(table.Columns, column)
+		}
+
+		o.schema.Tables = append(o.schema.Tables, table)
+	}
+
 	return nil
 }
 
 func (o *Oracle) parseViews(statement string) error {
-	// TODO: Implement view parsing
+	re := regexp.MustCompile(`CREATE(?:\s+OR\s+REPLACE)?\s+VIEW\s+([.\w]+)\s+AS\s+(.*?)(?:WITH\s+READ\s+ONLY)?$`)
+	matches := re.FindStringSubmatch(statement)
+
+	if len(matches) > 2 {
+		viewName := matches[1]
+		view := sqlmapper.View{
+			Definition: matches[2],
+		}
+
+		// Parse schema if exists
+		parts := strings.Split(viewName, ".")
+		if len(parts) > 1 {
+			view.Schema = parts[0]
+			view.Name = parts[1]
+		} else {
+			view.Name = viewName
+		}
+
+		o.schema.Views = append(o.schema.Views, view)
+	}
+
 	return nil
 }
 
 func (o *Oracle) parseFunctions(statement string) error {
-	// TODO: Implement function parsing
+	re := regexp.MustCompile(`CREATE(?:\s+OR\s+REPLACE)?\s+(FUNCTION|PROCEDURE)\s+([.\w]+)\s*\((.*?)\)(?:\s+RETURN\s+(\w+))?\s+IS|AS\s+(.*?)(?:END\s+\w+)?$`)
+	matches := re.FindStringSubmatch(statement)
+
+	if len(matches) > 4 {
+		isProc := matches[1] == "PROCEDURE"
+		functionName := matches[2]
+		function := sqlmapper.Function{
+			IsProc: isProc,
+			Body:   matches[5],
+		}
+
+		if !isProc {
+			function.Returns = matches[4]
+		}
+
+		// Parse schema if exists
+		parts := strings.Split(functionName, ".")
+		if len(parts) > 1 {
+			function.Schema = parts[0]
+			function.Name = parts[1]
+		} else {
+			function.Name = functionName
+		}
+
+		// Parse parameters
+		if matches[3] != "" {
+			params := strings.Split(matches[3], ",")
+			for _, param := range params {
+				parts := strings.Fields(strings.TrimSpace(param))
+				if len(parts) >= 2 {
+					parameter := sqlmapper.Parameter{
+						Name:     parts[0],
+						DataType: parts[1],
+					}
+					function.Parameters = append(function.Parameters, parameter)
+				}
+			}
+		}
+
+		o.schema.Functions = append(o.schema.Functions, function)
+	}
+
 	return nil
 }
 
 func (o *Oracle) parseTriggers(statement string) error {
-	// TODO: Implement trigger parsing
+	re := regexp.MustCompile(`CREATE(?:\s+OR\s+REPLACE)?\s+TRIGGER\s+([.\w]+)\s+(BEFORE|AFTER|INSTEAD\s+OF)\s+(INSERT|UPDATE|DELETE)\s+ON\s+([.\w]+)(?:\s+FOR\s+EACH\s+ROW)?\s+(.*?)(?:END\s+\w+)?$`)
+	matches := re.FindStringSubmatch(statement)
+
+	if len(matches) > 5 {
+		triggerName := matches[1]
+		trigger := sqlmapper.Trigger{
+			Timing:     matches[2],
+			Event:      matches[3],
+			Table:      matches[4],
+			Body:       matches[5],
+			ForEachRow: strings.Contains(statement, "FOR EACH ROW"),
+		}
+
+		// Parse schema if exists
+		parts := strings.Split(triggerName, ".")
+		if len(parts) > 1 {
+			trigger.Schema = parts[0]
+			trigger.Name = parts[1]
+		} else {
+			trigger.Name = triggerName
+		}
+
+		o.schema.Triggers = append(o.schema.Triggers, trigger)
+	}
+
 	return nil
 }
 
 func (o *Oracle) parseSequences(statement string) error {
-	// TODO: Implement sequence parsing
+	re := regexp.MustCompile(`CREATE\s+SEQUENCE\s+([.\w]+)(?:\s+START\s+WITH\s+(\d+))?(?:\s+INCREMENT\s+BY\s+(\d+))?(?:\s+MINVALUE\s+(\d+))?(?:\s+MAXVALUE\s+(\d+))?(?:\s+CACHE\s+(\d+))?(?:\s+CYCLE)?`)
+	matches := re.FindStringSubmatch(statement)
+
+	if len(matches) > 1 {
+		seqName := matches[1]
+		seq := sqlmapper.Sequence{
+			Name: seqName,
+		}
+
+		// Parse schema if exists
+		parts := strings.Split(seqName, ".")
+		if len(parts) > 1 {
+			seq.Schema = parts[0]
+			seq.Name = parts[1]
+		}
+
+		// Parse optional parameters
+		if len(matches) > 2 && matches[2] != "" {
+			fmt.Sscanf(matches[2], "%d", &seq.StartValue)
+		}
+		if len(matches) > 3 && matches[3] != "" {
+			fmt.Sscanf(matches[3], "%d", &seq.IncrementBy)
+		}
+		if len(matches) > 4 && matches[4] != "" {
+			fmt.Sscanf(matches[4], "%d", &seq.MinValue)
+		}
+		if len(matches) > 5 && matches[5] != "" {
+			fmt.Sscanf(matches[5], "%d", &seq.MaxValue)
+		}
+		if len(matches) > 6 && matches[6] != "" {
+			fmt.Sscanf(matches[6], "%d", &seq.Cache)
+		}
+		seq.Cycle = strings.Contains(statement, "CYCLE")
+
+		o.schema.Sequences = append(o.schema.Sequences, seq)
+	}
+
 	return nil
 }
 
 func (o *Oracle) parseTypes(statement string) error {
-	// TODO: Implement type parsing
+	re := regexp.MustCompile(`CREATE(?:\s+OR\s+REPLACE)?\s+TYPE\s+([.\w]+)\s+(?:AS\s+|IS\s+|UNDER\s+)?(.+?)(?:NOT\s+FINAL)?$`)
+	matches := re.FindStringSubmatch(statement)
+
+	if len(matches) > 2 {
+		typeName := matches[1]
+		typ := sqlmapper.Type{
+			Definition: matches[2],
+		}
+
+		// Parse schema if exists
+		parts := strings.Split(typeName, ".")
+		if len(parts) > 1 {
+			typ.Schema = parts[0]
+			typ.Name = parts[1]
+		} else {
+			typ.Name = typeName
+		}
+
+		o.schema.Types = append(o.schema.Types, typ)
+	}
+
 	return nil
 }
 
 func (o *Oracle) parseIndexes(statement string) error {
-	// TODO: Implement index parsing
+	re := regexp.MustCompile(`CREATE(?:\s+UNIQUE|\s+BITMAP)?\s+INDEX\s+([.\w]+)\s+ON\s+([.\w]+)\s*\((.*?)\)(?:\s+TABLESPACE\s+(\w+))?`)
+	matches := re.FindStringSubmatch(statement)
+
+	if len(matches) > 3 {
+		indexName := matches[1]
+		tableName := matches[2]
+		columns := strings.Split(matches[3], ",")
+
+		// Find the table
+		for i, table := range o.schema.Tables {
+			if table.Name == tableName || fmt.Sprintf("%s.%s", table.Schema, table.Name) == tableName {
+				index := sqlmapper.Index{
+					Name:     indexName,
+					Columns:  make([]string, len(columns)),
+					IsUnique: strings.Contains(statement, "UNIQUE"),
+					IsBitmap: strings.Contains(statement, "BITMAP"),
+				}
+
+				// Clean column names
+				for j, col := range columns {
+					index.Columns[j] = strings.TrimSpace(col)
+				}
+
+				// Parse tablespace if exists
+				if len(matches) > 4 && matches[4] != "" {
+					index.TableSpace = matches[4]
+				}
+
+				o.schema.Tables[i].Indexes = append(o.schema.Tables[i].Indexes, index)
+				break
+			}
+		}
+	}
+
 	return nil
+}
+
+// generateSequenceSQL generates SQL for a sequence
+func (o *Oracle) generateSequenceSQL(sequence sqlmapper.Sequence) string {
+	sql := fmt.Sprintf("CREATE SEQUENCE %s\n", sequence.Name)
+	if sequence.StartValue > 0 {
+		sql += fmt.Sprintf("START WITH %d\n", sequence.StartValue)
+	}
+	if sequence.IncrementBy > 0 {
+		sql += fmt.Sprintf("INCREMENT BY %d\n", sequence.IncrementBy)
+	}
+	if sequence.MinValue > 0 {
+		sql += fmt.Sprintf("MINVALUE %d\n", sequence.MinValue)
+	}
+	if sequence.MaxValue > 0 {
+		sql += fmt.Sprintf("MAXVALUE %d\n", sequence.MaxValue)
+	}
+	if sequence.Cache > 0 {
+		sql += fmt.Sprintf("CACHE %d\n", sequence.Cache)
+	}
+	if sequence.Cycle {
+		sql += "CYCLE\n"
+	}
+	return sql
+}
+
+// generateTypeSQL generates SQL for a type
+func (o *Oracle) generateTypeSQL(typ sqlmapper.Type) string {
+	return fmt.Sprintf("CREATE TYPE %s AS %s", typ.Name, typ.Definition)
+}
+
+// generateTableSQL generates SQL for a table
+func (o *Oracle) generateTableSQL(table sqlmapper.Table) string {
+	sql := "CREATE TABLE " + table.Name + " (\n"
+
+	// Generate columns
+	for i, col := range table.Columns {
+		sql += "    " + col.Name + " " + col.DataType
+		if col.Length > 0 {
+			sql += fmt.Sprintf("(%d", col.Length)
+			if col.Scale > 0 {
+				sql += fmt.Sprintf(",%d", col.Scale)
+			}
+			sql += ")"
+		}
+
+		if !col.IsNullable {
+			sql += " NOT NULL"
+		}
+		if col.IsUnique {
+			sql += " UNIQUE"
+		}
+		if col.DefaultValue != "" {
+			sql += " DEFAULT " + col.DefaultValue
+		}
+
+		if i < len(table.Columns)-1 {
+			sql += ",\n"
+		}
+	}
+
+	sql += "\n)"
+
+	// Add table options
+	if table.TableSpace != "" {
+		sql += " TABLESPACE " + table.TableSpace
+	}
+
+	return sql
+}
+
+// generateIndexSQL generates SQL for an index
+func (o *Oracle) generateIndexSQL(tableName string, index sqlmapper.Index) string {
+	var sql string
+	if index.IsBitmap {
+		sql = "CREATE BITMAP INDEX "
+	} else if index.IsUnique {
+		sql = "CREATE UNIQUE INDEX "
+	} else {
+		sql = "CREATE INDEX "
+	}
+
+	sql += index.Name + " ON " + tableName + " (" + strings.Join(index.Columns, ", ") + ")"
+
+	// Add index options
+	if index.TableSpace != "" {
+		sql += " TABLESPACE " + index.TableSpace
+	}
+
+	return sql
 }

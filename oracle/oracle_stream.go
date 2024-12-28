@@ -266,7 +266,7 @@ func (p *OracleStreamParser) parseStatement(statement string) (*sqlmapper.Schema
 			Data: table,
 		}, nil
 
-	case strings.HasPrefix(upperStatement, "CREATE VIEW") ||
+	case strings.HasPrefix(upperStatement, "CREATE VIEW"),
 		strings.HasPrefix(upperStatement, "CREATE MATERIALIZED VIEW"):
 		view, err := p.parseViewStatement(statement)
 		if err != nil {
@@ -327,8 +327,8 @@ func (p *OracleStreamParser) parseStatement(statement string) (*sqlmapper.Schema
 			Data: typ,
 		}, nil
 
-	case strings.HasPrefix(upperStatement, "CREATE INDEX") ||
-		strings.HasPrefix(upperStatement, "CREATE UNIQUE INDEX") ||
+	case strings.HasPrefix(upperStatement, "CREATE INDEX"),
+		strings.HasPrefix(upperStatement, "CREATE UNIQUE INDEX"),
 		strings.HasPrefix(upperStatement, "CREATE BITMAP INDEX"):
 		index, err := p.parseIndexStatement(statement)
 		if err != nil {
@@ -343,178 +343,8 @@ func (p *OracleStreamParser) parseStatement(statement string) (*sqlmapper.Schema
 	return nil, nil
 }
 
-// GenerateStream implements the StreamParser interface
-func (p *OracleStreamParser) GenerateStream(schema *sqlmapper.Schema, writer io.Writer) error {
-	// Generate types
-	for _, typ := range schema.Types {
-		sql := fmt.Sprintf("CREATE TYPE %s AS %s;\n/\n\n", typ.Name, typ.Definition)
-		_, err := writer.Write([]byte(sql))
-		if err != nil {
-			return err
-		}
-	}
-
-	// Generate sequences
-	for _, sequence := range schema.Sequences {
-		sql := fmt.Sprintf("CREATE SEQUENCE %s\n", sequence.Name)
-		if sequence.StartValue > 0 {
-			sql += fmt.Sprintf("START WITH %d\n", sequence.StartValue)
-		}
-		if sequence.IncrementBy > 0 {
-			sql += fmt.Sprintf("INCREMENT BY %d\n", sequence.IncrementBy)
-		}
-		if sequence.MinValue > 0 {
-			sql += fmt.Sprintf("MINVALUE %d\n", sequence.MinValue)
-		}
-		if sequence.MaxValue > 0 {
-			sql += fmt.Sprintf("MAXVALUE %d\n", sequence.MaxValue)
-		}
-		if sequence.Cache > 0 {
-			sql += fmt.Sprintf("CACHE %d\n", sequence.Cache)
-		}
-		if sequence.Cycle {
-			sql += "CYCLE\n"
-		}
-		sql += ";\n/\n\n"
-
-		_, err := writer.Write([]byte(sql))
-		if err != nil {
-			return err
-		}
-	}
-
-	// Generate tables
-	for _, table := range schema.Tables {
-		sql := "CREATE TABLE " + table.Name + " (\n"
-
-		// Generate columns
-		for i, col := range table.Columns {
-			sql += "    " + col.Name + " " + col.DataType
-			if col.Length > 0 {
-				sql += fmt.Sprintf("(%d", col.Length)
-				if col.Scale > 0 {
-					sql += fmt.Sprintf(",%d", col.Scale)
-				}
-				sql += ")"
-			}
-
-			if !col.IsNullable {
-				sql += " NOT NULL"
-			}
-			if col.IsUnique {
-				sql += " UNIQUE"
-			}
-			if col.DefaultValue != "" {
-				sql += " DEFAULT " + col.DefaultValue
-			}
-
-			if i < len(table.Columns)-1 {
-				sql += ",\n"
-			}
-		}
-
-		sql += "\n);\n/\n\n"
-
-		_, err := writer.Write([]byte(sql))
-		if err != nil {
-			return err
-		}
-
-		// Generate indexes
-		for _, index := range table.Indexes {
-			if index.IsBitmap {
-				sql = "CREATE BITMAP INDEX "
-			} else if index.IsUnique {
-				sql = "CREATE UNIQUE INDEX "
-			} else {
-				sql = "CREATE INDEX "
-			}
-
-			sql += index.Name + " ON " + table.Name + " (" + strings.Join(index.Columns, ", ") + ");\n/\n"
-
-			_, err := writer.Write([]byte(sql))
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	// Generate views
-	for _, view := range schema.Views {
-		if view.IsMaterialized {
-			sql := fmt.Sprintf("CREATE MATERIALIZED VIEW %s AS\n%s;\n/\n\n", view.Name, view.Definition)
-			_, err := writer.Write([]byte(sql))
-			if err != nil {
-				return err
-			}
-		} else {
-			sql := fmt.Sprintf("CREATE VIEW %s AS\n%s;\n/\n\n", view.Name, view.Definition)
-			_, err := writer.Write([]byte(sql))
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	// Generate functions
-	for _, function := range schema.Functions {
-		if !function.IsProc {
-			sql := fmt.Sprintf("CREATE FUNCTION %s(", function.Name)
-			for i, param := range function.Parameters {
-				if i > 0 {
-					sql += ", "
-				}
-				sql += fmt.Sprintf("%s %s", param.Name, param.DataType)
-			}
-			sql += fmt.Sprintf(")\nRETURN %s\nIS\nBEGIN\n%s\nEND;\n/\n\n",
-				function.Returns, function.Body)
-			_, err := writer.Write([]byte(sql))
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	// Generate procedures
-	for _, function := range schema.Functions {
-		if function.IsProc {
-			sql := fmt.Sprintf("CREATE PROCEDURE %s(", function.Name)
-			for i, param := range function.Parameters {
-				if i > 0 {
-					sql += ", "
-				}
-				sql += fmt.Sprintf("%s %s", param.Name, param.DataType)
-			}
-			sql += fmt.Sprintf(")\nIS\nBEGIN\n%s\nEND;\n/\n\n", function.Body)
-			_, err := writer.Write([]byte(sql))
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	// Generate triggers
-	for _, trigger := range schema.Triggers {
-		sql := fmt.Sprintf("CREATE TRIGGER %s\n%s %s ON %s\n",
-			trigger.Name, trigger.Timing, trigger.Event, trigger.Table)
-		if trigger.ForEachRow {
-			sql += "FOR EACH ROW\n"
-		}
-		if trigger.Condition != "" {
-			sql += "WHEN " + trigger.Condition + "\n"
-		}
-		sql += fmt.Sprintf("BEGIN\n%s\nEND;\n/\n\n", trigger.Body)
-		_, err := writer.Write([]byte(sql))
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
+// parseTableStatement parses a CREATE TABLE statement
 func (p *OracleStreamParser) parseTableStatement(statement string) (*sqlmapper.Table, error) {
-	// Create a temporary schema to parse the table
 	tempSchema := &sqlmapper.Schema{}
 	p.oracle.schema = tempSchema
 
@@ -529,8 +359,8 @@ func (p *OracleStreamParser) parseTableStatement(statement string) (*sqlmapper.T
 	return &tempSchema.Tables[0], nil
 }
 
+// parseViewStatement parses a CREATE VIEW statement
 func (p *OracleStreamParser) parseViewStatement(statement string) (*sqlmapper.View, error) {
-	// Create a temporary schema to parse the view
 	tempSchema := &sqlmapper.Schema{}
 	p.oracle.schema = tempSchema
 
@@ -545,8 +375,8 @@ func (p *OracleStreamParser) parseViewStatement(statement string) (*sqlmapper.Vi
 	return &tempSchema.Views[0], nil
 }
 
+// parseFunctionStatement parses a CREATE FUNCTION statement
 func (p *OracleStreamParser) parseFunctionStatement(statement string) (*sqlmapper.Function, error) {
-	// Create a temporary schema to parse the function
 	tempSchema := &sqlmapper.Schema{}
 	p.oracle.schema = tempSchema
 
@@ -558,11 +388,17 @@ func (p *OracleStreamParser) parseFunctionStatement(statement string) (*sqlmappe
 		return nil, fmt.Errorf("no function found in statement")
 	}
 
-	return &tempSchema.Functions[0], nil
+	for _, fn := range tempSchema.Functions {
+		if !fn.IsProc {
+			return &fn, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no function found in statement")
 }
 
-func (p *OracleStreamParser) parseProcedureStatement(statement string) (*sqlmapper.Function, error) {
-	// Create a temporary schema to parse the procedure
+// parseProcedureStatement parses a CREATE PROCEDURE statement
+func (p *OracleStreamParser) parseProcedureStatement(statement string) (*sqlmapper.Procedure, error) {
 	tempSchema := &sqlmapper.Schema{}
 	p.oracle.schema = tempSchema
 
@@ -574,11 +410,23 @@ func (p *OracleStreamParser) parseProcedureStatement(statement string) (*sqlmapp
 		return nil, fmt.Errorf("no procedure found in statement")
 	}
 
-	return &tempSchema.Functions[0], nil
+	for _, fn := range tempSchema.Functions {
+		if fn.IsProc {
+			proc := &sqlmapper.Procedure{
+				Name:       fn.Name,
+				Parameters: fn.Parameters,
+				Body:       fn.Body,
+				Schema:     fn.Schema,
+			}
+			return proc, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no procedure found in statement")
 }
 
+// parseTriggerStatement parses a CREATE TRIGGER statement
 func (p *OracleStreamParser) parseTriggerStatement(statement string) (*sqlmapper.Trigger, error) {
-	// Create a temporary schema to parse the trigger
 	tempSchema := &sqlmapper.Schema{}
 	p.oracle.schema = tempSchema
 
@@ -593,8 +441,8 @@ func (p *OracleStreamParser) parseTriggerStatement(statement string) (*sqlmapper
 	return &tempSchema.Triggers[0], nil
 }
 
+// parseSequenceStatement parses a CREATE SEQUENCE statement
 func (p *OracleStreamParser) parseSequenceStatement(statement string) (*sqlmapper.Sequence, error) {
-	// Create a temporary schema to parse the sequence
 	tempSchema := &sqlmapper.Schema{}
 	p.oracle.schema = tempSchema
 
@@ -609,8 +457,8 @@ func (p *OracleStreamParser) parseSequenceStatement(statement string) (*sqlmappe
 	return &tempSchema.Sequences[0], nil
 }
 
+// parseTypeStatement parses a CREATE TYPE statement
 func (p *OracleStreamParser) parseTypeStatement(statement string) (*sqlmapper.Type, error) {
-	// Create a temporary schema to parse the type
 	tempSchema := &sqlmapper.Schema{}
 	p.oracle.schema = tempSchema
 
@@ -625,8 +473,8 @@ func (p *OracleStreamParser) parseTypeStatement(statement string) (*sqlmapper.Ty
 	return &tempSchema.Types[0], nil
 }
 
+// parseIndexStatement parses a CREATE INDEX statement
 func (p *OracleStreamParser) parseIndexStatement(statement string) (*sqlmapper.Index, error) {
-	// Create a temporary schema to parse the index
 	tempSchema := &sqlmapper.Schema{}
 	p.oracle.schema = tempSchema
 
@@ -634,12 +482,101 @@ func (p *OracleStreamParser) parseIndexStatement(statement string) (*sqlmapper.I
 		return nil, err
 	}
 
-	// Find the first table with indexes
-	for _, table := range tempSchema.Tables {
-		if len(table.Indexes) > 0 {
-			return &table.Indexes[0], nil
+	if len(tempSchema.Tables) == 0 || len(tempSchema.Tables[0].Indexes) == 0 {
+		return nil, fmt.Errorf("no index found in statement")
+	}
+
+	return &tempSchema.Tables[0].Indexes[0], nil
+}
+
+// GenerateStream implements the StreamParser interface
+func (p *OracleStreamParser) GenerateStream(schema *sqlmapper.Schema, writer io.Writer) error {
+	if schema == nil {
+		return fmt.Errorf("schema cannot be nil")
+	}
+
+	// Write sequences
+	for _, sequence := range schema.Sequences {
+		stmt := p.oracle.generateSequenceSQL(sequence)
+		if _, err := writer.Write([]byte(stmt + ";\n\n")); err != nil {
+			return err
 		}
 	}
 
-	return nil, fmt.Errorf("no index found in statement")
+	// Write types
+	for _, typ := range schema.Types {
+		stmt := p.oracle.generateTypeSQL(typ)
+		if _, err := writer.Write([]byte(stmt + ";\n\n")); err != nil {
+			return err
+		}
+	}
+
+	// Write tables
+	for _, table := range schema.Tables {
+		stmt := p.oracle.generateTableSQL(table)
+		if _, err := writer.Write([]byte(stmt + ";\n\n")); err != nil {
+			return err
+		}
+
+		// Generate indexes for this table
+		for _, index := range table.Indexes {
+			stmt := p.oracle.generateIndexSQL(table.Name, index)
+			if _, err := writer.Write([]byte(stmt + ";\n")); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Write views
+	for _, view := range schema.Views {
+		stmt := fmt.Sprintf("CREATE VIEW %s AS %s", view.Name, view.Definition)
+		if _, err := writer.Write([]byte(stmt + ";\n\n")); err != nil {
+			return err
+		}
+	}
+
+	// Write functions
+	for _, function := range schema.Functions {
+		if !function.IsProc {
+			stmt := fmt.Sprintf("CREATE FUNCTION %s(", function.Name)
+			for i, param := range function.Parameters {
+				if i > 0 {
+					stmt += ", "
+				}
+				stmt += fmt.Sprintf("%s %s", param.Name, param.DataType)
+			}
+			stmt += fmt.Sprintf(") RETURN %s\n%s", function.Returns, function.Body)
+			if _, err := writer.Write([]byte(stmt + ";\n\n")); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Write procedures
+	for _, function := range schema.Functions {
+		if function.IsProc {
+			stmt := fmt.Sprintf("CREATE PROCEDURE %s(", function.Name)
+			for i, param := range function.Parameters {
+				if i > 0 {
+					stmt += ", "
+				}
+				stmt += fmt.Sprintf("%s %s", param.Name, param.DataType)
+			}
+			stmt += fmt.Sprintf(")\n%s", function.Body)
+			if _, err := writer.Write([]byte(stmt + ";\n\n")); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Write triggers
+	for _, trigger := range schema.Triggers {
+		stmt := fmt.Sprintf("CREATE TRIGGER %s %s %s ON %s\n%s",
+			trigger.Name, trigger.Timing, trigger.Event, trigger.Table, trigger.Body)
+		if _, err := writer.Write([]byte(stmt + ";\n\n")); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
