@@ -276,7 +276,8 @@ func (p *PostgreSQLStreamParser) parseStatement(statement string) (*sqlmapper.Sc
 			Data: table,
 		}, nil
 
-	case strings.HasPrefix(upperStatement, "CREATE VIEW") || strings.HasPrefix(upperStatement, "CREATE MATERIALIZED VIEW"):
+	case strings.HasPrefix(upperStatement, "CREATE VIEW"),
+		strings.HasPrefix(upperStatement, "CREATE MATERIALIZED VIEW"):
 		view, err := p.parseViewStatement(statement)
 		if err != nil {
 			return nil, err
@@ -316,7 +317,8 @@ func (p *PostgreSQLStreamParser) parseStatement(statement string) (*sqlmapper.Sc
 			Data: trigger,
 		}, nil
 
-	case strings.HasPrefix(upperStatement, "CREATE INDEX"):
+	case strings.HasPrefix(upperStatement, "CREATE INDEX"),
+		strings.HasPrefix(upperStatement, "CREATE UNIQUE INDEX"):
 		index, err := p.parseIndexStatement(statement)
 		if err != nil {
 			return nil, err
@@ -326,7 +328,8 @@ func (p *PostgreSQLStreamParser) parseStatement(statement string) (*sqlmapper.Sc
 			Data: index,
 		}, nil
 
-	case strings.HasPrefix(upperStatement, "GRANT"):
+	case strings.HasPrefix(upperStatement, "GRANT"),
+		strings.HasPrefix(upperStatement, "REVOKE"):
 		permission, err := p.parsePermissionStatement(statement)
 		if err != nil {
 			return nil, err
@@ -340,159 +343,8 @@ func (p *PostgreSQLStreamParser) parseStatement(statement string) (*sqlmapper.Sc
 	return nil, nil
 }
 
-// GenerateStream implements the StreamParser interface
-func (p *PostgreSQLStreamParser) GenerateStream(schema *sqlmapper.Schema, writer io.Writer) error {
-	// Generate types
-	for _, typ := range schema.Types {
-		if typ.Kind == "ENUM" {
-			sql := fmt.Sprintf("CREATE TYPE %s AS ENUM (%s);\n\n", typ.Name, typ.Definition)
-			_, err := writer.Write([]byte(sql))
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	// Generate tables
-	for _, table := range schema.Tables {
-		sql := "CREATE TABLE " + table.Name + " (\n"
-
-		// Generate columns
-		for i, col := range table.Columns {
-			sql += "    " + col.Name + " "
-
-			if col.IsPrimaryKey && strings.ToUpper(col.DataType) == "SERIAL" {
-				sql += "SERIAL PRIMARY KEY"
-			} else {
-				sql += col.DataType
-				if col.Length > 0 {
-					sql += fmt.Sprintf("(%d", col.Length)
-					if col.Scale > 0 {
-						sql += fmt.Sprintf(",%d", col.Scale)
-					}
-					sql += ")"
-				}
-
-				if !col.IsNullable {
-					sql += " NOT NULL"
-				}
-				if col.IsUnique {
-					sql += " UNIQUE"
-				}
-				if col.DefaultValue != "" {
-					sql += " DEFAULT " + col.DefaultValue
-				}
-			}
-
-			if i < len(table.Columns)-1 {
-				sql += ",\n"
-			}
-		}
-
-		sql += "\n);\n\n"
-
-		_, err := writer.Write([]byte(sql))
-		if err != nil {
-			return err
-		}
-
-		// Generate indexes
-		for _, index := range table.Indexes {
-			if index.IsUnique {
-				sql = "CREATE UNIQUE INDEX "
-			} else {
-				sql = "CREATE INDEX "
-			}
-			sql += index.Name + " ON " + table.Name
-			if index.Type != "" {
-				sql += " USING " + index.Type
-			}
-			sql += " (" + strings.Join(index.Columns, ", ") + ");\n"
-
-			_, err := writer.Write([]byte(sql))
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	// Generate views
-	for _, view := range schema.Views {
-		if view.IsMaterialized {
-			sql := fmt.Sprintf("CREATE MATERIALIZED VIEW %s AS\n%s;\n\n", view.Name, view.Definition)
-			_, err := writer.Write([]byte(sql))
-			if err != nil {
-				return err
-			}
-		} else {
-			sql := fmt.Sprintf("CREATE VIEW %s AS\n%s;\n\n", view.Name, view.Definition)
-			_, err := writer.Write([]byte(sql))
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	// Generate functions
-	for _, function := range schema.Functions {
-		if !function.IsProc {
-			sql := fmt.Sprintf("CREATE FUNCTION %s(", function.Name)
-			for i, param := range function.Parameters {
-				if i > 0 {
-					sql += ", "
-				}
-				sql += fmt.Sprintf("%s %s", param.Name, param.DataType)
-			}
-			sql += fmt.Sprintf(") RETURNS %s\nLANGUAGE %s\nAS $$\n%s\n$$;\n\n",
-				function.Returns, function.Language, function.Body)
-			_, err := writer.Write([]byte(sql))
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	// Generate procedures
-	for _, function := range schema.Functions {
-		if function.IsProc {
-			sql := fmt.Sprintf("CREATE PROCEDURE %s(", function.Name)
-			for i, param := range function.Parameters {
-				if i > 0 {
-					sql += ", "
-				}
-				sql += fmt.Sprintf("%s %s", param.Name, param.DataType)
-			}
-			sql += fmt.Sprintf(")\nLANGUAGE %s\nAS $$\n%s\n$$;\n\n",
-				function.Language, function.Body)
-			_, err := writer.Write([]byte(sql))
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	// Generate triggers
-	for _, trigger := range schema.Triggers {
-		sql := fmt.Sprintf("CREATE TRIGGER %s\n%s %s ON %s\n",
-			trigger.Name, trigger.Timing, trigger.Event, trigger.Table)
-		if trigger.ForEachRow {
-			sql += "FOR EACH ROW\n"
-		}
-		if trigger.Condition != "" {
-			sql += "WHEN (" + trigger.Condition + ")\n"
-		}
-		sql += "EXECUTE FUNCTION " + trigger.Body + ";\n\n"
-		_, err := writer.Write([]byte(sql))
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
+// parseTypeStatement parses a CREATE TYPE statement
 func (p *PostgreSQLStreamParser) parseTypeStatement(statement string) (*sqlmapper.Type, error) {
-	// Create a temporary schema to parse the type
 	tempSchema := &sqlmapper.Schema{}
 	p.postgres.schema = tempSchema
 
@@ -507,8 +359,8 @@ func (p *PostgreSQLStreamParser) parseTypeStatement(statement string) (*sqlmappe
 	return &tempSchema.Types[0], nil
 }
 
+// parseTableStatement parses a CREATE TABLE statement
 func (p *PostgreSQLStreamParser) parseTableStatement(statement string) (*sqlmapper.Table, error) {
-	// Create a temporary schema to parse the table
 	tempSchema := &sqlmapper.Schema{}
 	p.postgres.schema = tempSchema
 
@@ -523,8 +375,8 @@ func (p *PostgreSQLStreamParser) parseTableStatement(statement string) (*sqlmapp
 	return &tempSchema.Tables[0], nil
 }
 
+// parseViewStatement parses a CREATE VIEW statement
 func (p *PostgreSQLStreamParser) parseViewStatement(statement string) (*sqlmapper.View, error) {
-	// Create a temporary schema to parse the view
 	tempSchema := &sqlmapper.Schema{}
 	p.postgres.schema = tempSchema
 
@@ -539,8 +391,8 @@ func (p *PostgreSQLStreamParser) parseViewStatement(statement string) (*sqlmappe
 	return &tempSchema.Views[0], nil
 }
 
+// parseFunctionStatement parses a CREATE FUNCTION statement
 func (p *PostgreSQLStreamParser) parseFunctionStatement(statement string) (*sqlmapper.Function, error) {
-	// Create a temporary schema to parse the function
 	tempSchema := &sqlmapper.Schema{}
 	p.postgres.schema = tempSchema
 
@@ -552,11 +404,17 @@ func (p *PostgreSQLStreamParser) parseFunctionStatement(statement string) (*sqlm
 		return nil, fmt.Errorf("no function found in statement")
 	}
 
-	return &tempSchema.Functions[0], nil
+	for _, fn := range tempSchema.Functions {
+		if !fn.IsProc {
+			return &fn, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no function found in statement")
 }
 
-func (p *PostgreSQLStreamParser) parseProcedureStatement(statement string) (*sqlmapper.Function, error) {
-	// Create a temporary schema to parse the procedure
+// parseProcedureStatement parses a CREATE PROCEDURE statement
+func (p *PostgreSQLStreamParser) parseProcedureStatement(statement string) (*sqlmapper.Procedure, error) {
 	tempSchema := &sqlmapper.Schema{}
 	p.postgres.schema = tempSchema
 
@@ -568,11 +426,23 @@ func (p *PostgreSQLStreamParser) parseProcedureStatement(statement string) (*sql
 		return nil, fmt.Errorf("no procedure found in statement")
 	}
 
-	return &tempSchema.Functions[0], nil
+	for _, fn := range tempSchema.Functions {
+		if fn.IsProc {
+			proc := &sqlmapper.Procedure{
+				Name:       fn.Name,
+				Parameters: fn.Parameters,
+				Body:       fn.Body,
+				Schema:     fn.Schema,
+			}
+			return proc, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no procedure found in statement")
 }
 
+// parseTriggerStatement parses a CREATE TRIGGER statement
 func (p *PostgreSQLStreamParser) parseTriggerStatement(statement string) (*sqlmapper.Trigger, error) {
-	// Create a temporary schema to parse the trigger
 	tempSchema := &sqlmapper.Schema{}
 	p.postgres.schema = tempSchema
 
@@ -587,8 +457,8 @@ func (p *PostgreSQLStreamParser) parseTriggerStatement(statement string) (*sqlma
 	return &tempSchema.Triggers[0], nil
 }
 
+// parseIndexStatement parses a CREATE INDEX statement
 func (p *PostgreSQLStreamParser) parseIndexStatement(statement string) (*sqlmapper.Index, error) {
-	// Create a temporary schema to parse the index
 	tempSchema := &sqlmapper.Schema{}
 	p.postgres.schema = tempSchema
 
@@ -596,18 +466,15 @@ func (p *PostgreSQLStreamParser) parseIndexStatement(statement string) (*sqlmapp
 		return nil, err
 	}
 
-	// Find the first table with indexes
-	for _, table := range tempSchema.Tables {
-		if len(table.Indexes) > 0 {
-			return &table.Indexes[0], nil
-		}
+	if len(tempSchema.Tables) == 0 || len(tempSchema.Tables[0].Indexes) == 0 {
+		return nil, fmt.Errorf("no index found in statement")
 	}
 
-	return nil, fmt.Errorf("no index found in statement")
+	return &tempSchema.Tables[0].Indexes[0], nil
 }
 
+// parsePermissionStatement parses a GRANT/REVOKE statement
 func (p *PostgreSQLStreamParser) parsePermissionStatement(statement string) (*sqlmapper.Permission, error) {
-	// Create a temporary schema to parse the permission
 	tempSchema := &sqlmapper.Schema{}
 	p.postgres.schema = tempSchema
 
@@ -620,4 +487,104 @@ func (p *PostgreSQLStreamParser) parsePermissionStatement(statement string) (*sq
 	}
 
 	return &tempSchema.Permissions[0], nil
+}
+
+// GenerateStream implements the StreamParser interface
+func (p *PostgreSQLStreamParser) GenerateStream(schema *sqlmapper.Schema, writer io.Writer) error {
+	if schema == nil {
+		return fmt.Errorf("schema cannot be nil")
+	}
+
+	// Write types
+	for _, typ := range schema.Types {
+		stmt := p.postgres.generateTypeSQL(typ)
+		if _, err := writer.Write([]byte(stmt + ";\n\n")); err != nil {
+			return err
+		}
+	}
+
+	// Write tables
+	for _, table := range schema.Tables {
+		stmt := p.postgres.generateTableSQL(table)
+		if _, err := writer.Write([]byte(stmt + ";\n\n")); err != nil {
+			return err
+		}
+
+		// Generate indexes for this table
+		for _, index := range table.Indexes {
+			stmt := p.postgres.generateIndexSQL(table.Name, index)
+			if _, err := writer.Write([]byte(stmt + ";\n")); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Write views
+	for _, view := range schema.Views {
+		if view.IsMaterialized {
+			stmt := fmt.Sprintf("CREATE MATERIALIZED VIEW %s AS %s", view.Name, view.Definition)
+			if _, err := writer.Write([]byte(stmt + ";\n\n")); err != nil {
+				return err
+			}
+		} else {
+			stmt := fmt.Sprintf("CREATE VIEW %s AS %s", view.Name, view.Definition)
+			if _, err := writer.Write([]byte(stmt + ";\n\n")); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Write functions
+	for _, function := range schema.Functions {
+		if !function.IsProc {
+			stmt := fmt.Sprintf("CREATE FUNCTION %s(", function.Name)
+			for i, param := range function.Parameters {
+				if i > 0 {
+					stmt += ", "
+				}
+				stmt += fmt.Sprintf("%s %s", param.Name, param.DataType)
+			}
+			stmt += fmt.Sprintf(") RETURNS %s AS $$\n%s\n$$ LANGUAGE %s",
+				function.Returns, function.Body, function.Language)
+			if _, err := writer.Write([]byte(stmt + ";\n\n")); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Write procedures
+	for _, function := range schema.Functions {
+		if function.IsProc {
+			stmt := fmt.Sprintf("CREATE PROCEDURE %s(", function.Name)
+			for i, param := range function.Parameters {
+				if i > 0 {
+					stmt += ", "
+				}
+				stmt += fmt.Sprintf("%s %s", param.Name, param.DataType)
+			}
+			stmt += fmt.Sprintf(") AS $$\n%s\n$$ LANGUAGE %s",
+				function.Body, function.Language)
+			if _, err := writer.Write([]byte(stmt + ";\n\n")); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Write triggers
+	for _, trigger := range schema.Triggers {
+		stmt := fmt.Sprintf("CREATE TRIGGER %s %s %s ON %s\n",
+			trigger.Name, trigger.Timing, trigger.Event, trigger.Table)
+		if trigger.ForEachRow {
+			stmt += "FOR EACH ROW\n"
+		}
+		if trigger.Condition != "" {
+			stmt += "WHEN " + trigger.Condition + "\n"
+		}
+		stmt += fmt.Sprintf("EXECUTE FUNCTION %s", trigger.Body)
+		if _, err := writer.Write([]byte(stmt + ";\n\n")); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

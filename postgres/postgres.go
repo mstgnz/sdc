@@ -1045,3 +1045,80 @@ func (p *PostgreSQL) parsePermissions(content string) error {
 
 	return nil
 }
+
+// generateTypeSQL generates SQL for a type
+func (p *PostgreSQL) generateTypeSQL(typ sqlmapper.Type) string {
+	if typ.Kind == "ENUM" {
+		return fmt.Sprintf("CREATE TYPE %s AS ENUM (%s)", typ.Name, typ.Definition)
+	}
+	return fmt.Sprintf("CREATE TYPE %s AS %s", typ.Name, typ.Definition)
+}
+
+// generateTableSQL generates SQL for a table
+func (p *PostgreSQL) generateTableSQL(table sqlmapper.Table) string {
+	sql := "CREATE TABLE " + table.Name + " (\n"
+
+	// Generate columns
+	for i, col := range table.Columns {
+		sql += "    " + col.Name + " "
+
+		if col.IsPrimaryKey && strings.ToUpper(col.DataType) == "SERIAL" {
+			sql += "SERIAL PRIMARY KEY"
+		} else {
+			sql += col.DataType
+			if col.Length > 0 {
+				sql += fmt.Sprintf("(%d", col.Length)
+				if col.Scale > 0 {
+					sql += fmt.Sprintf(",%d", col.Scale)
+				}
+				sql += ")"
+			}
+
+			if !col.IsNullable {
+				sql += " NOT NULL"
+			}
+			if col.IsUnique {
+				sql += " UNIQUE"
+			}
+			if col.DefaultValue != "" {
+				sql += " DEFAULT " + col.DefaultValue
+			}
+		}
+
+		if i < len(table.Columns)-1 {
+			sql += ",\n"
+		}
+	}
+
+	sql += "\n)"
+
+	// Add table options
+	if table.TableSpace != "" {
+		sql += " TABLESPACE " + table.TableSpace
+	}
+
+	return sql
+}
+
+// generateIndexSQL generates SQL for an index
+func (p *PostgreSQL) generateIndexSQL(tableName string, index sqlmapper.Index) string {
+	var sql string
+	if index.IsUnique {
+		sql = "CREATE UNIQUE INDEX "
+	} else {
+		sql = "CREATE INDEX "
+	}
+
+	sql += index.Name + " ON " + tableName
+	if index.Type != "" {
+		sql += " USING " + index.Type
+	}
+	sql += " (" + strings.Join(index.Columns, ", ") + ")"
+
+	// Add index options
+	if index.TableSpace != "" {
+		sql += " TABLESPACE " + index.TableSpace
+	}
+
+	return sql
+}
